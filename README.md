@@ -19,7 +19,7 @@ library to integrate lighting into rust projects
 | Pay invoice                           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Check status of invoice               | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 
-## Node Mangement Functions
+## Node Management Functions
 
 | Node Functions            | CLN RPC            | Greenlight         | LDK                |
 | --------------------------| -------------------| ------------------ | ------------------ | 
