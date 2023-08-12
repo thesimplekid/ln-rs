@@ -1,0 +1,28 @@
+[package]
+name = "ln-rs-models"
+version = "0.1.0"
+edition = "2021"
+authors = ["thesimplekid"]
+license = "BSD-3-Clause"
+documentation = "https://docs.rs/crate/ln-rs-models"
+repository = "https://github.com/thesimplekid/ln-rs"
+description = "Library for integrating with lighting nodes"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "ln_rs_models"
+path =  "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true } 
+bitcoin = { workspace = true }
+# cashu-crab = { git = "https://github.com/thesimplekid/cashu-crab"}
+serde = { workspace = true }
+serde_json = { workspace = true }
+nostr = { workspace = true }
+jwt-compact = { workspace = true }
+lightning-invoice = { workspace = true }
+gl-client = { workspace = true }
+ldk-node = { workspace = true }
+cln-rpc = { workspace = true } 

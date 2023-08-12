@@ -5,8 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bitcoin::{secp256k1::PublicKey, Address};
 use bitcoin_hashes::Hash;
-use cashu_crab::Amount;
-use cashu_crab::Sha256;
 use futures::Stream;
 use ldk_node::bitcoin::Network;
 use ldk_node::io::SqliteStore;
@@ -15,16 +13,16 @@ use ldk_node::PeerDetails;
 use ldk_node::{Builder, Config};
 use ldk_node::{ChannelDetails, ChannelId, NetAddress};
 use ldk_node::{Event, Node};
-use node_manager_types::responses::ChannelInfo;
-use node_manager_types::ChannelStatus;
-use node_manager_types::{requests, responses, Bolt11};
+use ln_rs_models::responses::ChannelInfo;
+use ln_rs_models::Amount;
+use ln_rs_models::ChannelStatus;
+use ln_rs_models::{requests, responses, Bolt11};
+use ln_rs_models::{InvoiceStatus, Sha256};
 use std::net::{Ipv4Addr, SocketAddr};
 use tracing::debug;
 
-use super::cashu_crab_invoice;
 use super::Error;
 use super::InvoiceInfo;
-use super::InvoiceStatus;
 use super::LnNodeManager;
 use super::LnProcessor;
 
@@ -227,7 +225,7 @@ impl LnNodeManager for Ldk {
 
         let res = responses::PayInvoiceResponse {
             payment_hash: Sha256::from_str(&p.to_string())?,
-            status: cashu_crab_invoice(InvoiceStatus::InFlight),
+            status: InvoiceStatus::InFlight,
         };
 
         Ok(res)

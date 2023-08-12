@@ -2,7 +2,7 @@ use std::{fmt, string::FromUtf8Error};
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use cashu_crab::lightning_invoice::ParseOrSemanticError;
+use lightning_invoice::ParseOrSemanticError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]

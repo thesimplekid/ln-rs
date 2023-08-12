@@ -14,7 +14,7 @@ use jwt_compact::{
     prelude::*,
     AlgorithmExt,
 };
-use node_manager_types::TokenClaims;
+use ln_rs_models::TokenClaims;
 use nostr::key::XOnlyPublicKey;
 use serde::Serialize;
 use tracing::debug;
@@ -55,7 +55,7 @@ pub async fn auth<B>(
     let token = UntrustedToken::new(&token).unwrap();
 
     let key = Hs256Key::new(data.jwt_secret.clone());
-    let token: Token<TokenClaims> = Hs256.validate_integrity(&token, &key).map_err(|_| {
+    let token: Token<TokenClaims> = Hs256.validator(&key).validate(&token).map_err(|_| {
         let json_error = ErrorResponse {
             status: "fail",
             message: "Could not verify token".to_string(),

@@ -7,7 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Address;
-use cashu_crab::{types::InvoiceStatus, Amount, Bolt11Invoice, Sha256};
+// use cashu_crab::{Amount, Bolt11Invoice, Sha256};
 use cln_rpc::model::responses::ListfundsOutputsStatus;
 use cln_rpc::model::responses::ListpeerchannelsChannelsState;
 use cln_rpc::model::responses::{ListpeersPeers, PayStatus};
@@ -20,9 +20,11 @@ use cln_rpc::model::{
 use cln_rpc::primitives::{Amount as CLN_Amount, AmountOrAny};
 use cln_rpc::primitives::{AmountOrAll, ChannelState};
 use futures::{Stream, StreamExt};
-use node_manager_types::responses::BalanceResponse;
-use node_manager_types::{requests, responses};
-use node_manager_types::{Bolt11, ChannelStatus};
+use lightning_invoice::Bolt11Invoice;
+use ln_rs_models::responses::BalanceResponse;
+use ln_rs_models::Amount;
+use ln_rs_models::{requests, responses};
+use ln_rs_models::{Bolt11, ChannelStatus, InvoiceStatus, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -74,7 +76,7 @@ impl LnProcessor for Cln {
 
         match cln_response {
             cln_rpc::Response::Invoice(invoice_response) => {
-                let invoice = Bolt11Invoice::from_str(&invoice_response.bolt11)?;
+                let invoice = Bolt11Invoice::from_str(&invoice_response.bolt11).unwrap();
                 let payment_hash = Sha256::from_str(&invoice_response.payment_hash.to_string())?;
                 let invoice_info = InvoiceInfo::new(
                     payment_hash,
@@ -396,7 +398,7 @@ impl LnNodeManager for Cln {
 
         let invoice = match cln_response {
             cln_rpc::Response::Invoice(invoice_res) => {
-                Bolt11Invoice::from_str(&invoice_res.bolt11)?
+                Bolt11Invoice::from_str(&invoice_res.bolt11).unwrap()
             }
             _ => {
                 warn!("CLN returned wrong response kind");

@@ -3,18 +3,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bitcoin::{secp256k1::PublicKey, Address};
-use cashu_crab::{lightning_invoice::Bolt11Invoice, Amount, Sha256};
-use cln_rpc::model::responses::ListinvoicesInvoicesStatus;
+// use cashu_crab::{lightning_invoice::Bolt11Invoice, Amount, Sha256};
 use futures::Stream;
-use gl_client::pb::cln::listinvoices_invoices::ListinvoicesInvoicesStatus as GL_ListInvoiceStatus;
+use ln_rs_models::{requests, responses, Bolt11};
 use serde::{Deserialize, Serialize};
 
 pub use cln::Cln;
 pub use error::Error;
 pub use greenlight::Greenlight;
 pub use ldk::Ldk;
-pub use node_manager_types;
-use node_manager_types::{requests, responses, Bolt11};
+pub use lightning_invoice;
+pub use lightning_invoice::Bolt11Invoice;
+pub use ln_rs_models::{Amount, InvoiceStatus, Sha256};
 
 pub mod cln;
 pub mod error;
@@ -29,76 +29,6 @@ pub mod utils;
 pub struct Ln {
     pub ln_processor: Arc<dyn LnProcessor>,
     pub node_manager: Option<node_manager::Nodemanger>,
-}
-
-/// Possible states of an invoice
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
-pub enum InvoiceStatus {
-    Unpaid,
-    Paid,
-    Expired,
-    InFlight,
-}
-
-impl From<ListinvoicesInvoicesStatus> for InvoiceStatus {
-    fn from(status: ListinvoicesInvoicesStatus) -> Self {
-        match status {
-            ListinvoicesInvoicesStatus::UNPAID => Self::Unpaid,
-            ListinvoicesInvoicesStatus::PAID => Self::Paid,
-            ListinvoicesInvoicesStatus::EXPIRED => Self::Expired,
-        }
-    }
-}
-
-impl From<GL_ListInvoiceStatus> for InvoiceStatus {
-    fn from(status: GL_ListInvoiceStatus) -> Self {
-        match status {
-            GL_ListInvoiceStatus::Unpaid => Self::Unpaid,
-            GL_ListInvoiceStatus::Paid => Self::Paid,
-            GL_ListInvoiceStatus::Expired => Self::Expired,
-        }
-    }
-}
-
-impl From<ldk_node::PaymentStatus> for InvoiceStatus {
-    fn from(status: ldk_node::PaymentStatus) -> Self {
-        match status {
-            ldk_node::PaymentStatus::Pending => Self::Unpaid,
-            ldk_node::PaymentStatus::Succeeded => Self::Paid,
-            ldk_node::PaymentStatus::Failed => Self::Expired,
-        }
-    }
-}
-
-impl From<cashu_crab::types::InvoiceStatus> for InvoiceStatus {
-    fn from(status: cashu_crab::types::InvoiceStatus) -> Self {
-        match status {
-            cashu_crab::types::InvoiceStatus::Unpaid => Self::Unpaid,
-            cashu_crab::types::InvoiceStatus::Paid => Self::Paid,
-            cashu_crab::types::InvoiceStatus::Expired => Self::Expired,
-            cashu_crab::types::InvoiceStatus::InFlight => Self::InFlight,
-        }
-    }
-}
-
-pub fn cashu_crab_invoice(invoice: InvoiceStatus) -> cashu_crab::types::InvoiceStatus {
-    match invoice {
-        InvoiceStatus::Unpaid => cashu_crab::types::InvoiceStatus::Unpaid,
-        InvoiceStatus::Paid => cashu_crab::types::InvoiceStatus::Paid,
-        InvoiceStatus::Expired => cashu_crab::types::InvoiceStatus::Expired,
-        InvoiceStatus::InFlight => cashu_crab::types::InvoiceStatus::InFlight,
-    }
-}
-
-impl ToString for InvoiceStatus {
-    fn to_string(&self) -> String {
-        match self {
-            InvoiceStatus::Paid => "Paid".to_string(),
-            InvoiceStatus::Unpaid => "Unpaid".to_string(),
-            InvoiceStatus::Expired => "Expired".to_string(),
-            InvoiceStatus::InFlight => "InFlight".to_string(),
-        }
-    }
 }
 
 /// Possible states of an invoice

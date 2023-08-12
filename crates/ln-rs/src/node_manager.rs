@@ -11,14 +11,12 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use bitcoin::Address;
-use cashu_crab::Amount;
 use chrono::Duration;
 use jwt_compact::{
     alg::{Hs256, Hs256Key},
     prelude::*,
 };
-use node_manager_types::TokenClaims;
-use node_manager_types::{requests, responses, Bolt11};
+use ln_rs_models::{requests, responses, Amount, Bolt11, TokenClaims};
 use nostr::event::Event;
 use nostr::key::XOnlyPublicKey;
 use std::net::Ipv4Addr;
@@ -353,7 +351,7 @@ async fn post_nostr_login(
 
     let key = Hs256Key::new(state.jwt_secret);
     let header: Header = Header::default();
-    let token: String = Hs256.token(header, &claims, &key).unwrap();
+    let token: String = Hs256.token(&header, &claims, &key).unwrap();
 
     let cookie = Cookie::build("token", token.to_owned())
         .path("/")

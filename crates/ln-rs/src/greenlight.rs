@@ -7,10 +7,6 @@ use async_trait::async_trait;
 use bip39::{Language, Mnemonic};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Address;
-use cashu_crab::types::InvoiceStatus as CrabInvoiceStatus;
-use cashu_crab::Amount;
-use cashu_crab::Bolt11Invoice;
-use cashu_crab::Sha256;
 use futures::{Stream, StreamExt};
 use gl_client::bitcoin::Network;
 use gl_client::node::ClnClient;
@@ -25,15 +21,18 @@ use gl_client::signer::model::cln::ListpeerchannelsRequest;
 use gl_client::signer::model::greenlight::cln::InvoiceResponse;
 use gl_client::signer::Signer;
 use gl_client::tls::TlsConfig;
-use node_manager_types::ChannelStatus;
-use node_manager_types::{requests, responses, Bolt11};
+use ln_rs_models::ChannelStatus;
+use ln_rs_models::{requests, responses, Bolt11};
 use tokio::sync::Mutex;
 use tracing::debug;
 use tracing::log::warn;
 use uuid::Uuid;
 
+use crate::Bolt11Invoice;
+use ln_rs_models::{Amount, InvoiceStatus, Sha256};
+
 use super::LnNodeManager;
-use super::{Error, InvoiceInfo, InvoiceStatus, LnProcessor};
+use super::{Error, InvoiceInfo, LnProcessor};
 
 #[derive(Clone)]
 pub struct Greenlight {
@@ -222,7 +221,7 @@ impl LnProcessor for Greenlight {
         } = cln_response.into_inner();
 
         let invoice = {
-            let invoice = Bolt11Invoice::from_str(&bolt11)?;
+            let invoice = Bolt11Invoice::from_str(&bolt11).unwrap();
             let payment_hash = Sha256::from_str(&String::from_utf8(payment_hash)?)?;
             let invoice_info = InvoiceInfo::new(
                 payment_hash,
@@ -480,9 +479,9 @@ impl LnNodeManager for Greenlight {
             .into_inner();
 
         let status = match response.status() {
-            PayStatus::Complete => CrabInvoiceStatus::Paid,
-            PayStatus::Pending => CrabInvoiceStatus::InFlight,
-            PayStatus::Failed => CrabInvoiceStatus::Expired,
+            PayStatus::Complete => InvoiceStatus::Paid,
+            PayStatus::Pending => InvoiceStatus::InFlight,
+            PayStatus::Failed => InvoiceStatus::Expired,
         };
 
         Ok(responses::PayInvoiceResponse {
@@ -520,7 +519,7 @@ impl LnNodeManager for Greenlight {
             .into_inner();
         let bolt11 = response.bolt11;
 
-        Ok(Bolt11Invoice::from_str(&bolt11)?)
+        Ok(Bolt11Invoice::from_str(&bolt11).unwrap())
     }
 
     async fn pay_on_chain(&self, address: Address, amount: Amount) -> Result<String, Error> {
