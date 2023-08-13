@@ -1,3 +1,4 @@
+use std::array::TryFromSliceError;
 use std::{fmt, string::FromUtf8Error};
 
 use axum::http::StatusCode;
@@ -14,6 +15,7 @@ pub enum Error {
     TonicError(String),
     InvalidLnUrl,
     IoError(std::io::Error),
+    ParseError(String),
 }
 
 impl std::error::Error for Error {}
@@ -28,6 +30,7 @@ impl fmt::Display for Error {
             Self::IoError(err) => write!(f, "Io Error {:?}", err),
             Self::TonicError(code) => write!(f, "{}", code),
             Self::InvalidLnUrl => write!(f, "LnUrl is invalid"),
+            Self::ParseError(err) => write!(f, "{}", err),
         }
     }
 }
@@ -117,20 +120,38 @@ impl From<bip39::Error> for Error {
 }
 
 impl From<url::ParseError> for Error {
-    fn from(_err: url::ParseError) -> Self {
-        Self::Custom("Could not parse url".to_string())
+    fn from(err: url::ParseError) -> Self {
+        Self::ParseError(err.to_string())
     }
 }
 
 impl From<hex::FromHexError> for Error {
     fn from(err: hex::FromHexError) -> Self {
-        Self::Custom(err.to_string())
+        Self::ParseError(err.to_string())
     }
 }
 
 impl From<std::num::ParseIntError> for Error {
     fn from(err: std::num::ParseIntError) -> Self {
-        Self::Custom(err.to_string())
+        Self::ParseError(err.to_string())
+    }
+}
+
+impl From<TryFromSliceError> for Error {
+    fn from(err: TryFromSliceError) -> Self {
+        Self::ParseError(err.to_string())
+    }
+}
+
+impl From<gl_client::bitcoin::util::address::Error> for Error {
+    fn from(err: gl_client::bitcoin::util::address::Error) -> Self {
+        Self::ParseError(format!("Could not parse address {:?}", err))
+    }
+}
+
+impl From<()> for Error {
+    fn from(_err: ()) -> Self {
+        Self::ParseError("Could not parse network address".to_string())
     }
 }
 
@@ -167,6 +188,7 @@ impl IntoResponse for Error {
             Self::TonicError(_code) => (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
             Error::IoError(_err) => (StatusCode::BAD_REQUEST, "").into_response(),
             Self::InvalidLnUrl => (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
+            Self::ParseError(_err) => (StatusCode::INTERNAL_SERVER_ERROR, "").into_response(),
         }
     }
 }

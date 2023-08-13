@@ -221,7 +221,7 @@ impl LnProcessor for Greenlight {
         } = cln_response.into_inner();
 
         let invoice = {
-            let invoice = Bolt11Invoice::from_str(&bolt11).unwrap();
+            let invoice = Bolt11Invoice::from_str(&bolt11)?;
             let payment_hash = Sha256::from_str(&String::from_utf8(payment_hash)?)?;
             let invoice_info = InvoiceInfo::new(
                 payment_hash,
@@ -319,9 +319,10 @@ impl LnProcessor for Greenlight {
             amount_sent_msat,
             ..
         } = cln_response.into_inner();
+        let amount_sent_msat = amount_sent_msat.map(|x| x.msat).unwrap_or_default();
         let invoice = (
             serde_json::to_string(&payment_preimage)?,
-            Amount::from_msat(amount_sent_msat.unwrap().msat),
+            Amount::from_msat(amount_sent_msat),
         );
 
         Ok(invoice)
@@ -401,7 +402,7 @@ impl LnNodeManager for Greenlight {
         let channels = channels_response
             .channels
             .into_iter()
-            .map(|x| from_list_channels_to_info(x).unwrap())
+            .flat_map(|x| from_list_channels_to_info(x))
             .collect();
 
         Ok(channels)
@@ -519,7 +520,7 @@ impl LnNodeManager for Greenlight {
             .into_inner();
         let bolt11 = response.bolt11;
 
-        Ok(Bolt11Invoice::from_str(&bolt11).unwrap())
+        Ok(Bolt11Invoice::from_str(&bolt11)?)
     }
 
     async fn pay_on_chain(&self, address: Address, amount: Amount) -> Result<String, Error> {
@@ -613,14 +614,13 @@ impl LnNodeManager for Greenlight {
                 ..Default::default()
             })
             .await
-            .map_err(|err| Error::TonicError(err.to_string()))
-            .unwrap()
+            .map_err(|err| Error::TonicError(err.to_string()))?
             .into_inner();
 
         let peers = response
             .peers
             .iter()
-            .map(|x| from_peer_to_info(x).unwrap())
+            .flat_map(|x| from_peer_to_info(x))
             .collect();
 
         Ok(peers)
@@ -628,7 +628,7 @@ impl LnNodeManager for Greenlight {
 }
 
 fn from_peer_to_info(peer: &cln::ListpeersPeers) -> Result<responses::PeerInfo, Error> {
-    let peer_pubkey = PublicKey::from_slice(&peer.id).unwrap();
+    let peer_pubkey = PublicKey::from_slice(&peer.id)?;
 
     let connected = peer.connected;
 
@@ -638,7 +638,7 @@ fn from_peer_to_info(peer: &cln::ListpeersPeers) -> Result<responses::PeerInfo, 
         .collect();
 
     let host = remote_addr[0].to_string();
-    let port = remote_addr[1].parse::<u16>().unwrap();
+    let port = remote_addr[1].parse::<u16>().unwrap_or_default();
 
     Ok(responses::PeerInfo {
         peer_pubkey,

@@ -76,7 +76,7 @@ impl LnProcessor for Cln {
 
         match cln_response {
             cln_rpc::Response::Invoice(invoice_response) => {
-                let invoice = Bolt11Invoice::from_str(&invoice_response.bolt11).unwrap();
+                let invoice = Bolt11Invoice::from_str(&invoice_response.bolt11)?;
                 let payment_hash = Sha256::from_str(&invoice_response.payment_hash.to_string())?;
                 let invoice_info = InvoiceInfo::new(
                     payment_hash,
@@ -398,7 +398,7 @@ impl LnNodeManager for Cln {
 
         let invoice = match cln_response {
             cln_rpc::Response::Invoice(invoice_res) => {
-                Bolt11Invoice::from_str(&invoice_res.bolt11).unwrap()
+                Bolt11Invoice::from_str(&invoice_res.bolt11)?
             }
             _ => {
                 warn!("CLN returned wrong response kind");
@@ -438,14 +438,11 @@ impl LnNodeManager for Cln {
         let mut cln_client = self.cln_client.lock().await;
 
         let destination = peer_id.map(|x| x.to_string());
-        debug!("{}", channel_id);
-        debug!("{:?}", destination);
         let cln_response = cln_client
             .call(cln_rpc::Request::Close(CloseRequest {
                 id: channel_id,
                 unilateraltimeout: None,
-                // FIXME:
-                destination: None,
+                destination,
                 fee_negotiation_step: None,
                 wrong_funding: None,
                 force_lease_closed: None,

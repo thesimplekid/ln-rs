@@ -121,6 +121,7 @@ impl Nodemanger {
                 post(post_close_channel)
                     .route_layer(middleware::from_fn_with_state(state_arc.clone(), auth)),
             )
+            // TODO: Remove this for production
             .layer(
                 CorsLayer::very_permissive()
                     .allow_credentials(true)
@@ -160,7 +161,7 @@ impl Nodemanger {
                 })
             }
             Nodemanger::Greenlight(gln) => {
-                let address = gln.new_onchain_address().await.unwrap();
+                let address = gln.new_onchain_address().await?;
                 Ok(responses::FundingAddressResponse {
                     address: address.to_string(),
                 })
@@ -260,9 +261,7 @@ impl Nodemanger {
         create_invoice_request: requests::PayOnChainRequest,
     ) -> Result<String, Error> {
         let amount = Amount::from_sat(create_invoice_request.sat);
-        let address = Address::from_str(&create_invoice_request.address)
-            .unwrap()
-            .assume_checked();
+        let address = Address::from_str(&create_invoice_request.address)?.assume_checked();
         let txid = match &self {
             Nodemanger::Ldk(ldk) => ldk.pay_on_chain(address, amount).await?,
             Nodemanger::Cln(cln) => cln.pay_on_chain(address, amount).await?,
@@ -351,7 +350,9 @@ async fn post_nostr_login(
 
     let key = Hs256Key::new(state.jwt_secret);
     let header: Header = Header::default();
-    let token: String = Hs256.token(&header, &claims, &key).unwrap();
+    let token: String = Hs256
+        .token(&header, &claims, &key)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let cookie = Cookie::build("token", token.to_owned())
         .path("/")
@@ -366,11 +367,15 @@ async fn post_nostr_login(
             token,
         }
         .as_json()
-        .unwrap(),
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
     );
-    response
-        .headers_mut()
-        .insert(header::SET_COOKIE, cookie.to_string().parse().unwrap());
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        cookie
+            .to_string()
+            .parse()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+    );
     Ok(response)
 }
 

@@ -40,6 +40,8 @@ impl Ldk {
             ..Default::default()
         };
         let mut builder = Builder::from_config(config);
+
+        // TODO: set network and handle seed better
         builder.set_entropy_seed_path("./myseed".to_string());
         builder.set_network(Network::Signet);
         builder.set_esplora_server("https://mutinynet.com/api".to_string());
@@ -127,17 +129,21 @@ impl LnProcessor for Ldk {
         invoice: Bolt11Invoice,
         _max_fee: Option<Amount>,
     ) -> Result<(String, Amount), Error> {
-        let payment_hash = self.node.send_payment(
-            &ldk_node::lightning_invoice::Bolt11Invoice::from_str(&invoice.to_string()).unwrap(),
-        )?;
+        let payment_hash =
+            self.node
+                .send_payment(&ldk_node::lightning_invoice::Bolt11Invoice::from_str(
+                    &invoice.to_string(),
+                )?)?;
         let payment = self
             .node
             .list_payments_with_filter(|p| p.hash == payment_hash);
 
-        Ok((
-            String::from_utf8(payment_hash.0.to_vec())?,
-            Amount::from_msat(payment[0].amount_msat.unwrap()),
-        ))
+        let amount_msat = payment[0]
+            .amount_msat
+            .map(|a| Amount::from_msat(a))
+            .unwrap_or_default();
+
+        Ok((String::from_utf8(payment_hash.0.to_vec())?, amount_msat))
     }
 }
 
@@ -146,9 +152,7 @@ impl LnNodeManager for Ldk {
     async fn new_onchain_address(&self) -> Result<Address, Error> {
         let address = self.node.new_onchain_address()?;
 
-        let address = Address::from_str(&address.to_string())
-            .unwrap()
-            .assume_checked();
+        let address = Address::from_str(&address.to_string())?.assume_checked();
 
         Ok(address)
     }
@@ -171,7 +175,7 @@ impl LnNodeManager for Ldk {
 
         let net_address = NetAddress::from(peer_addr);
         let node_pubkey =
-            ldk_node::bitcoin::secp256k1::PublicKey::from_slice(&public_key.serialize()).unwrap();
+            ldk_node::bitcoin::secp256k1::PublicKey::from_slice(&public_key.serialize())?;
 
         let push_amount = push_amount.map(|a| a.to_msat());
         let _ = self.node.connect_open_channel(
@@ -199,9 +203,12 @@ impl LnNodeManager for Ldk {
     }
 
     async fn get_balance(&self) -> Result<responses::BalanceResponse, Error> {
-        let on_chain_total = Amount::from_sat(self.node.total_onchain_balance_sats().unwrap());
-        let on_chain_spendable =
-            Amount::from_sat(self.node.spendable_onchain_balance_sats().unwrap());
+        let on_chain_total = Amount::from_sat(self.node.total_onchain_balance_sats()?);
+        let on_chain_spendable = Amount::from_sat(
+            self.node
+                .spendable_onchain_balance_sats()
+                .unwrap_or_default(),
+        );
         let channel_info = self.node.list_channels();
 
         let ln = channel_info.into_iter().fold(Amount::ZERO, |acc, c| {
@@ -218,10 +225,11 @@ impl LnNodeManager for Ldk {
     async fn pay_invoice(&self, bolt11: Bolt11) -> Result<responses::PayInvoiceResponse, Error> {
         let p = bolt11.bolt11.payment_hash();
 
-        let _res = self.node.send_payment(
-            &ldk_node::lightning_invoice::Bolt11Invoice::from_str(&bolt11.bolt11.to_string())
-                .unwrap(),
-        )?;
+        let _res =
+            self.node
+                .send_payment(&ldk_node::lightning_invoice::Bolt11Invoice::from_str(
+                    &bolt11.bolt11.to_string(),
+                )?)?;
 
         let res = responses::PayInvoiceResponse {
             payment_hash: Sha256::from_str(&p.to_string())?,
@@ -238,14 +246,13 @@ impl LnNodeManager for Ldk {
     ) -> Result<Bolt11Invoice, Error> {
         let invoice = self
             .node
-            .receive_payment(amount.to_msat(), &description, SECS_IN_DAY)
-            .unwrap();
+            .receive_payment(amount.to_msat(), &description, SECS_IN_DAY)?;
 
         Ok(invoice)
     }
 
     async fn pay_on_chain(&self, address: Address, amount: Amount) -> Result<String, Error> {
-        let address = gl_client::bitcoin::Address::from_str(&address.to_string()).unwrap();
+        let address = gl_client::bitcoin::Address::from_str(&address.to_string())?;
         let res = self
             .node
             .send_to_onchain_address(&address, amount.to_sat())?;
@@ -254,11 +261,14 @@ impl LnNodeManager for Ldk {
     }
 
     async fn close(&self, channel_id: String, peer_id: Option<PublicKey>) -> Result<(), Error> {
-        let channel_id: [u8; 32] = channel_id.as_bytes().try_into().unwrap();
+        let channel_id: [u8; 32] = channel_id.as_bytes().try_into()?;
         let channel_id = ChannelId(channel_id);
 
-        let peer_id =
-            cln_rpc::primitives::PublicKey::from_str(&peer_id.unwrap().to_string()).unwrap();
+        let peer_id = peer_id
+            .map(|id| id.to_string())
+            .ok_or_else(|| Error::Custom("Peer id is required".to_string()))?;
+
+        let peer_id = cln_rpc::primitives::PublicKey::from_str(&peer_id)?;
 
         self.node.close_channel(&channel_id, peer_id)?;
 
@@ -270,13 +280,13 @@ impl LnNodeManager for Ldk {
         destination: bitcoin::secp256k1::PublicKey,
         amount: Amount,
     ) -> Result<String, Error> {
-        let pubkey = cln_rpc::primitives::PublicKey::from_slice(&destination.serialize()).unwrap();
+        let pubkey = cln_rpc::primitives::PublicKey::from_slice(&destination.serialize())?;
 
         let res = self
             .node
             .send_spontaneous_payment(amount.to_sat(), pubkey)?;
 
-        Ok(String::from_utf8(res.0.to_vec()).unwrap())
+        Ok(String::from_utf8(res.0.to_vec())?)
     }
 
     async fn connect_peer(
@@ -285,7 +295,7 @@ impl LnNodeManager for Ldk {
         address: String,
         port: u16,
     ) -> Result<responses::PeerInfo, Error> {
-        let net_addr = NetAddress::from_str(&format!("{}:{}", address, port)).unwrap();
+        let net_addr = NetAddress::from_str(&format!("{}:{}", address, port))?;
 
         let pubkey = cln_rpc::primitives::PublicKey::from_slice(&public_key.serialize())?;
         self.node.connect(pubkey, net_addr, true)?;
@@ -314,9 +324,8 @@ impl LnNodeManager for Ldk {
 
 fn channel_info_from_details(details: ChannelDetails) -> Result<ChannelInfo, Error> {
     let peer_pubkey =
-        bitcoin::secp256k1::PublicKey::from_str(&details.counterparty_node_id.to_string()).unwrap();
+        bitcoin::secp256k1::PublicKey::from_str(&details.counterparty_node_id.to_string())?;
 
-    // FIXME:
     let status = match details.is_usable {
         true => ChannelStatus::Active,
         false => ChannelStatus::Inactive,
@@ -333,8 +342,7 @@ fn channel_info_from_details(details: ChannelDetails) -> Result<ChannelInfo, Err
 }
 
 fn peer_info_from_details(details: &PeerDetails) -> Result<responses::PeerInfo, Error> {
-    let _peer_pubkey =
-        bitcoin::secp256k1::PublicKey::from_slice(&details.node_id.serialize()).unwrap();
+    let _peer_pubkey = bitcoin::secp256k1::PublicKey::from_slice(&details.node_id.serialize())?;
 
     todo!()
     /*

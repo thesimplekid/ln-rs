@@ -52,7 +52,13 @@ pub async fn auth<B>(
         (StatusCode::UNAUTHORIZED, Json(json_error))
     })?;
 
-    let token = UntrustedToken::new(&token).unwrap();
+    let token = UntrustedToken::new(&token).map_err(|_| {
+        let json_error = ErrorResponse {
+            status: "fail",
+            message: "Could not verify token".to_string(),
+        };
+        (StatusCode::UNAUTHORIZED, Json(json_error))
+    })?;
 
     let key = Hs256Key::new(data.jwt_secret.clone());
     let token: Token<TokenClaims> = Hs256.validator(&key).validate(&token).map_err(|_| {
