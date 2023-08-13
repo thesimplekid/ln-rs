@@ -21,6 +21,8 @@ use ln_rs_models::{InvoiceStatus, Sha256};
 use std::net::{Ipv4Addr, SocketAddr};
 use tracing::debug;
 
+use crate::utils::ldk_payment_status;
+
 use super::Error;
 use super::InvoiceInfo;
 use super::LnNodeManager;
@@ -119,7 +121,7 @@ impl LnProcessor for Ldk {
             .node
             .list_payments_with_filter(|p| p.hash == payment_hash);
 
-        let status = payment[0].status.into();
+        let status = ldk_payment_status(payment[0].status);
 
         Ok(status)
     }

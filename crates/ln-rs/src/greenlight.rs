@@ -28,6 +28,7 @@ use tracing::debug;
 use tracing::log::warn;
 use uuid::Uuid;
 
+use crate::utils::gln_invoice_status_to_status;
 use crate::Bolt11Invoice;
 use ln_rs_models::{Amount, InvoiceStatus, Sha256};
 
@@ -288,7 +289,7 @@ impl LnProcessor for Greenlight {
             debug!("{:?}", invoices);
             let i = invoices[0].clone();
 
-            i.status().into()
+            gln_invoice_status_to_status(i.status())
         };
 
         Ok(status)

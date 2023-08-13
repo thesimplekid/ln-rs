@@ -23,6 +23,3 @@ serde_json = { workspace = true }
 nostr = { workspace = true }
 jwt-compact = { workspace = true }
 lightning-invoice = { workspace = true }
-gl-client = { workspace = true }
-ldk-node = { workspace = true }
-cln-rpc = { workspace = true } 

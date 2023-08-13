@@ -1,5 +1,3 @@
-use cln_rpc::model::responses::ListinvoicesInvoicesStatus;
-use gl_client::pb::cln::listinvoices_invoices::ListinvoicesInvoicesStatus as GL_ListInvoiceStatus;
 use lightning_invoice::Bolt11Invoice;
 use serde::{Deserialize, Serialize};
 
@@ -171,36 +169,6 @@ impl ToString for InvoiceStatus {
             InvoiceStatus::Unpaid => "Unpaid".to_string(),
             InvoiceStatus::Expired => "Expired".to_string(),
             InvoiceStatus::InFlight => "InFlight".to_string(),
-        }
-    }
-}
-
-impl From<ListinvoicesInvoicesStatus> for InvoiceStatus {
-    fn from(status: ListinvoicesInvoicesStatus) -> Self {
-        match status {
-            ListinvoicesInvoicesStatus::UNPAID => Self::Unpaid,
-            ListinvoicesInvoicesStatus::PAID => Self::Paid,
-            ListinvoicesInvoicesStatus::EXPIRED => Self::Expired,
-        }
-    }
-}
-
-impl From<GL_ListInvoiceStatus> for InvoiceStatus {
-    fn from(status: GL_ListInvoiceStatus) -> Self {
-        match status {
-            GL_ListInvoiceStatus::Unpaid => Self::Unpaid,
-            GL_ListInvoiceStatus::Paid => Self::Paid,
-            GL_ListInvoiceStatus::Expired => Self::Expired,
-        }
-    }
-}
-
-impl From<ldk_node::PaymentStatus> for InvoiceStatus {
-    fn from(status: ldk_node::PaymentStatus) -> Self {
-        match status {
-            ldk_node::PaymentStatus::Pending => Self::Unpaid,
-            ldk_node::PaymentStatus::Succeeded => Self::Paid,
-            ldk_node::PaymentStatus::Failed => Self::Expired,
         }
     }
 }

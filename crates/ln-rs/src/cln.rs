@@ -29,6 +29,8 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
+use crate::utils::cln_invoice_status_to_status;
+
 use super::{Error, InvoiceInfo, LnNodeManager, LnProcessor};
 
 #[derive(Clone)]
@@ -157,7 +159,7 @@ impl LnProcessor for Cln {
             cln_rpc::Response::ListInvoices(invoice_response) => {
                 let i = invoice_response.invoices[0].clone();
 
-                i.status.into()
+                cln_invoice_status_to_status(i.status)
             }
             _ => {
                 warn!("CLN returned wrong response kind");
