@@ -364,6 +364,7 @@ impl LnNodeManager for Cln {
                     PayStatus::FAILED => InvoiceStatus::Unpaid,
                 };
                 responses::PayInvoiceResponse {
+                    payment_preimage: Some(hex::encode(pay_response.payment_preimage.to_vec())),
                     payment_hash: Sha256::from_str(&pay_response.payment_hash.to_string())?,
                     status,
                 }

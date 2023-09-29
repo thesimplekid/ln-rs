@@ -487,6 +487,7 @@ impl LnNodeManager for Greenlight {
         };
 
         Ok(responses::PayInvoiceResponse {
+            payment_preimage: Some(hex::encode(response.payment_preimage)),
             payment_hash: Sha256::from_str(&String::from_utf8(response.payment_hash)?)?,
             status,
         })

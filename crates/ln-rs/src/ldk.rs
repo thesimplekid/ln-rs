@@ -234,6 +234,7 @@ impl LnNodeManager for Ldk {
                 )?)?;
 
         let res = responses::PayInvoiceResponse {
+            payment_preimage: None,
             payment_hash: Sha256::from_str(&p.to_string())?,
             status: InvoiceStatus::InFlight,
         };
