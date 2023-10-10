@@ -8,15 +8,18 @@ use async_trait::async_trait;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Address;
 // use cashu_crab::{Amount, Bolt11Invoice, Sha256};
-use cln_rpc::model::responses::ListfundsOutputsStatus;
-use cln_rpc::model::responses::ListpeerchannelsChannelsState;
-use cln_rpc::model::responses::{ListpeersPeers, PayStatus};
-use cln_rpc::model::ListpeerchannelsChannels;
-use cln_rpc::model::{CloseRequest, FundchannelRequest};
-use cln_rpc::model::{
-    InvoiceRequest, KeysendRequest, ListfundsChannels, ListinvoicesRequest, NewaddrRequest,
-    PayRequest, WaitanyinvoiceRequest, WaitanyinvoiceResponse, WithdrawRequest,
+use cln_rpc::model::requests::{
+    CloseRequest, ConnectRequest, FundchannelRequest, InvoiceRequest, KeysendRequest,
+    ListfundsRequest, ListinvoicesRequest, ListpeersRequest, NewaddrRequest, PayRequest,
+    WaitanyinvoiceRequest, WithdrawRequest,
 };
+use cln_rpc::model::responses::ListfundsOutputsStatus;
+use cln_rpc::model::responses::ListpeerchannelsChannels;
+use cln_rpc::model::responses::ListpeerchannelsChannelsState;
+use cln_rpc::model::responses::{
+    ListfundsChannels, ListpeersPeers, PayStatus, WaitanyinvoiceResponse,
+};
+use cln_rpc::model::{Request, Response};
 use cln_rpc::primitives::{Amount as CLN_Amount, AmountOrAny};
 use cln_rpc::primitives::{AmountOrAll, ChannelState};
 use futures::{Stream, StreamExt};
@@ -24,14 +27,14 @@ use lightning_invoice::Bolt11Invoice;
 use ln_rs_models::responses::BalanceResponse;
 use ln_rs_models::Amount;
 use ln_rs_models::{requests, responses};
-use ln_rs_models::{Bolt11, ChannelStatus, InvoiceStatus, Sha256};
+use ln_rs_models::{ChannelStatus, InvoiceStatus, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::utils::cln_invoice_status_to_status;
 
-use super::{Error, InvoiceInfo, LnNodeManager, LnProcessor};
+use super::{Error, InvoiceInfo, LnProcessor};
 
 #[derive(Clone)]
 pub struct Cln {
@@ -147,11 +150,14 @@ impl LnProcessor for Cln {
         let mut cln_client = cln_rpc::ClnRpc::new(&self.rpc_socket).await?;
 
         let cln_response = cln_client
-            .call(cln_rpc::Request::ListInvoices(ListinvoicesRequest {
+            .call(Request::ListInvoices(ListinvoicesRequest {
                 payment_hash: Some(payment_hash.to_string()),
                 label: None,
                 invstring: None,
                 offer_id: None,
+                index: None,
+                limit: None,
+                start: None,
             }))
             .await?;
 
@@ -174,16 +180,13 @@ impl LnProcessor for Cln {
 
     async fn pay_invoice(
         &self,
-        invoice: Bolt11Invoice,
+        bolt11: Bolt11Invoice,
         max_fee: Option<Amount>,
-    ) -> Result<(String, Amount), Error> {
-        let mut cln_client = cln_rpc::ClnRpc::new(&self.rpc_socket).await?;
-
-        let maxfee = max_fee.map(|amount| CLN_Amount::from_sat(u64::from(amount)));
-
+    ) -> Result<responses::PayInvoiceResponse, Error> {
+        let mut cln_client = self.cln_client.lock().await;
         let cln_response = cln_client
-            .call(cln_rpc::Request::Pay(PayRequest {
-                bolt11: invoice.to_string(),
+            .call(Request::Pay(PayRequest {
+                bolt11: bolt11.to_string(),
                 amount_msat: None,
                 label: None,
                 riskfactor: None,
@@ -193,31 +196,33 @@ impl LnProcessor for Cln {
                 exemptfee: None,
                 localinvreqid: None,
                 exclude: None,
-                maxfee,
+                maxfee: max_fee.map(|a| CLN_Amount::from_msat(a.to_msat())),
                 description: None,
             }))
             .await?;
 
-        let invoice = match cln_response {
-            cln_rpc::Response::Pay(pay_response) => (
-                serde_json::to_string(&pay_response.payment_preimage)?,
-                Amount::from(pay_response.amount_sent_msat.msat() / 1000),
-            ),
-            _ => panic!(),
+        let response = match cln_response {
+            cln_rpc::Response::Pay(pay_response) => {
+                let status = match pay_response.status {
+                    PayStatus::COMPLETE => InvoiceStatus::Paid,
+                    PayStatus::PENDING => InvoiceStatus::InFlight,
+                    PayStatus::FAILED => InvoiceStatus::Unpaid,
+                };
+                responses::PayInvoiceResponse {
+                    payment_preimage: Some(hex::encode(pay_response.payment_preimage.to_vec())),
+                    payment_hash: Sha256::from_str(&pay_response.payment_hash.to_string())?,
+                    status,
+                }
+            }
+            _ => {
+                warn!("CLN returned wrong response kind");
+                return Err(Error::WrongClnResponse);
+            }
         };
 
-        Ok(invoice)
+        Ok(response)
     }
-}
 
-pub fn fee_reserve(invoice_amount: Amount) -> Amount {
-    let fee_reserse = (u64::from(invoice_amount) as f64 * 0.01) as u64;
-
-    Amount::from(fee_reserse)
-}
-
-#[async_trait]
-impl LnNodeManager for Cln {
     async fn new_onchain_address(&self) -> Result<Address, Error> {
         let mut cln_client = self.cln_client.lock().await;
         let cln_response = cln_client
@@ -254,7 +259,7 @@ impl LnNodeManager for Cln {
             .await?;
 
         let channel_id = match cln_response {
-            cln_rpc::Response::FundChannel(addr_res) => addr_res.channel_id,
+            Response::FundChannel(addr_res) => addr_res.channel_id,
             _ => {
                 warn!("CLN returned wrong response kind");
                 return Err(Error::WrongClnResponse);
@@ -267,13 +272,11 @@ impl LnNodeManager for Cln {
     async fn list_channels(&self) -> Result<Vec<responses::ChannelInfo>, Error> {
         let mut cln_client = self.cln_client.lock().await;
         let cln_response = cln_client
-            .call(cln_rpc::Request::ListFunds(
-                cln_rpc::model::ListfundsRequest { spent: Some(false) },
-            ))
+            .call(Request::ListFunds(ListfundsRequest { spent: Some(false) }))
             .await?;
 
         let channels = match cln_response {
-            cln_rpc::Response::ListFunds(channels) => channels
+            Response::ListFunds(channels) => channels
                 .channels
                 .iter()
                 .flat_map(from_channel_to_info)
@@ -291,9 +294,7 @@ impl LnNodeManager for Cln {
     async fn get_balance(&self) -> Result<responses::BalanceResponse, Error> {
         let mut cln_client = self.cln_client.lock().await;
         let cln_response = cln_client
-            .call(cln_rpc::Request::ListFunds(
-                cln_rpc::model::ListfundsRequest { spent: None },
-            ))
+            .call(Request::ListFunds(ListfundsRequest { spent: None }))
             .await?;
 
         let balance = match cln_response {
@@ -335,47 +336,6 @@ impl LnNodeManager for Cln {
         };
 
         Ok(balance)
-    }
-
-    async fn pay_invoice(&self, bolt11: Bolt11) -> Result<responses::PayInvoiceResponse, Error> {
-        let mut cln_client = self.cln_client.lock().await;
-        let cln_response = cln_client
-            .call(cln_rpc::Request::Pay(PayRequest {
-                bolt11: bolt11.bolt11.to_string(),
-                amount_msat: None,
-                label: None,
-                riskfactor: None,
-                maxfeepercent: None,
-                retry_for: None,
-                maxdelay: None,
-                exemptfee: None,
-                localinvreqid: None,
-                exclude: None,
-                maxfee: None,
-                description: None,
-            }))
-            .await?;
-
-        let response = match cln_response {
-            cln_rpc::Response::Pay(pay_response) => {
-                let status = match pay_response.status {
-                    PayStatus::COMPLETE => InvoiceStatus::Paid,
-                    PayStatus::PENDING => InvoiceStatus::InFlight,
-                    PayStatus::FAILED => InvoiceStatus::Unpaid,
-                };
-                responses::PayInvoiceResponse {
-                    payment_preimage: Some(hex::encode(pay_response.payment_preimage.to_vec())),
-                    payment_hash: Sha256::from_str(&pay_response.payment_hash.to_string())?,
-                    status,
-                }
-            }
-            _ => {
-                warn!("CLN returned wrong response kind");
-                return Err(Error::WrongClnResponse);
-            }
-        };
-
-        Ok(response)
     }
 
     async fn create_invoice(
@@ -472,7 +432,7 @@ impl LnNodeManager for Cln {
         let mut cln_client = self.cln_client.lock().await;
 
         let cln_response = cln_client
-            .call(cln_rpc::Request::KeySend(KeysendRequest {
+            .call(Request::KeySend(KeysendRequest {
                 destination,
                 amount_msat,
                 label: None,
@@ -486,7 +446,7 @@ impl LnNodeManager for Cln {
             .await?;
 
         let payment_hash = match cln_response {
-            cln_rpc::Response::KeySend(keysend_res) => keysend_res.payment_hash,
+            Response::KeySend(keysend_res) => keysend_res.payment_hash,
             _ => {
                 warn!("CLN returned wrong response kind");
                 return Err(Error::WrongClnResponse);
@@ -504,7 +464,7 @@ impl LnNodeManager for Cln {
     ) -> Result<responses::PeerInfo, Error> {
         let mut cln_client = self.cln_client.lock().await;
         let cln_response = cln_client
-            .call(cln_rpc::Request::Connect(cln_rpc::model::ConnectRequest {
+            .call(Request::Connect(ConnectRequest {
                 id: public_key.to_string(),
                 host: Some(host.clone()),
                 port: Some(port),
@@ -533,18 +493,14 @@ impl LnNodeManager for Cln {
     async fn list_peers(&self) -> Result<Vec<responses::PeerInfo>, Error> {
         let mut cln_client = self.cln_client.lock().await;
         let cln_response = cln_client
-            .call(cln_rpc::Request::ListPeers(
-                cln_rpc::model::ListpeersRequest {
-                    id: None,
-                    level: None,
-                },
-            ))
+            .call(Request::ListPeers(ListpeersRequest {
+                id: None,
+                level: None,
+            }))
             .await?;
 
         let peers = match cln_response {
-            cln_rpc::Response::ListPeers(peers) => {
-                peers.peers.iter().flat_map(from_peer_to_info).collect()
-            }
+            Response::ListPeers(peers) => peers.peers.iter().flat_map(from_peer_to_info).collect(),
             _ => {
                 warn!("CLN returned wrong response kind");
                 return Err(Error::WrongClnResponse);
@@ -553,6 +509,12 @@ impl LnNodeManager for Cln {
 
         Ok(peers)
     }
+}
+
+pub fn fee_reserve(invoice_amount: Amount) -> Amount {
+    let fee_reserse = (u64::from(invoice_amount) as f64 * 0.01) as u64;
+
+    Amount::from(fee_reserse)
 }
 
 fn from_open_request_to_fund_request(

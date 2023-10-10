@@ -19,6 +19,7 @@ pub mod requests {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct KeysendRequest {
+        /// Amount in sats
         pub amount: u64,
         pub pubkey: PublicKey,
     }

@@ -19,7 +19,7 @@ use nostr::key::XOnlyPublicKey;
 use serde::Serialize;
 use tracing::debug;
 
-use super::node_manager::NodeMangerState;
+use super::node_manager::NodeManger;
 
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
@@ -29,7 +29,7 @@ pub struct ErrorResponse {
 
 pub async fn auth<B>(
     cookie_jar: CookieJar,
-    State(data): State<Arc<NodeMangerState>>,
+    State(data): State<Arc<NodeManger>>,
     req: Request<B>,
     next: Next<B>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {

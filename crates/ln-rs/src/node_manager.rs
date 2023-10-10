@@ -10,12 +10,14 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_extra::extract::cookie::{Cookie, SameSite};
-use bitcoin::Address;
+use bitcoin::{Address, Network};
 use chrono::Duration;
 use jwt_compact::{
     alg::{Hs256, Hs256Key},
     prelude::*,
 };
+use lightning_invoice::Bolt11Invoice;
+use ln_rs_models::responses::FundingAddressResponse;
 use ln_rs_models::{requests, responses, Amount, Bolt11, TokenClaims};
 use nostr::event::Event;
 use nostr::key::XOnlyPublicKey;
@@ -25,25 +27,17 @@ use tracing::warn;
 
 pub use super::error::Error;
 use super::jwt_auth::auth;
-use super::{cln, greenlight, ldk};
 
-use crate::LnNodeManager;
-
-#[derive(Clone)]
-pub enum Nodemanger {
-    Ldk(Arc<ldk::Ldk>),
-    Cln(Arc<cln::Cln>),
-    Greenlight(Arc<greenlight::Greenlight>),
-}
+use crate::LnProcessor;
 
 #[derive(Clone)]
-pub struct NodeMangerState {
-    pub ln: Nodemanger,
+pub struct NodeManger {
+    pub ln: Arc<Box<dyn LnProcessor>>,
     pub authorized_users: HashSet<XOnlyPublicKey>,
     pub jwt_secret: String,
 }
 
-impl Nodemanger {
+impl NodeManger {
     pub async fn start_server(
         &self,
         listen_host: &str,
@@ -51,8 +45,8 @@ impl Nodemanger {
         authorized_users: HashSet<XOnlyPublicKey>,
         jwt_secret: &str,
     ) -> Result<(), Error> {
-        let state = NodeMangerState {
-            ln: self.clone(),
+        let state = NodeManger {
+            ln: self.ln.clone(),
             authorized_users,
             jwt_secret: jwt_secret.to_string(),
         };
@@ -147,52 +141,22 @@ impl Nodemanger {
     }
 
     pub async fn new_onchain_address(&self) -> Result<responses::FundingAddressResponse, Error> {
-        match &self {
-            Nodemanger::Ldk(ldk) => {
-                let address = ldk.new_onchain_address().await?;
-                Ok(responses::FundingAddressResponse {
-                    address: address.to_string(),
-                })
-            }
-            Nodemanger::Cln(cln) => {
-                let address = cln.new_onchain_address().await?;
-                Ok(responses::FundingAddressResponse {
-                    address: address.to_string(),
-                })
-            }
-            Nodemanger::Greenlight(gln) => {
-                let address = gln.new_onchain_address().await?;
-                Ok(responses::FundingAddressResponse {
-                    address: address.to_string(),
-                })
-            }
-        }
+        let address = self.ln.new_onchain_address().await?;
+        Ok(responses::FundingAddressResponse {
+            address: address.to_string(),
+        })
     }
 
     pub async fn connect_open_channel(
         &self,
         open_channel_request: requests::OpenChannelRequest,
     ) -> Result<StatusCode, Error> {
-        match &self {
-            Nodemanger::Ldk(ldk) => {
-                ldk.open_channel(open_channel_request).await?;
-            }
-            Nodemanger::Cln(cln) => {
-                cln.open_channel(open_channel_request).await?;
-            }
-            Nodemanger::Greenlight(gln) => {
-                gln.open_channel(open_channel_request).await?;
-            }
-        };
+        self.ln.open_channel(open_channel_request).await?;
         Ok(StatusCode::OK)
     }
 
     pub async fn list_channels(&self) -> Result<Vec<responses::ChannelInfo>, Error> {
-        let channels = match &self {
-            Nodemanger::Ldk(ldk) => ldk.list_channels().await?,
-            Nodemanger::Cln(cln) => cln.list_channels().await?,
-            Nodemanger::Greenlight(gln) => gln.list_channels().await?,
-        };
+        let channels = self.ln.list_channels().await?;
 
         warn!("Channels: {:?}", channels);
 
@@ -200,22 +164,15 @@ impl Nodemanger {
     }
 
     pub async fn get_balance(&self) -> Result<responses::BalanceResponse, Error> {
-        match &self {
-            Nodemanger::Ldk(ldk) => ldk.get_balance().await,
-            Nodemanger::Cln(cln) => cln.get_balance().await,
-            Nodemanger::Greenlight(gln) => gln.get_balance().await,
-        }
+        self.ln.get_balance().await
     }
 
     pub async fn pay_invoice(
         &self,
-        bolt11: Bolt11,
+        bolt11: Bolt11Invoice,
+        max_fee: Option<Amount>,
     ) -> Result<responses::PayInvoiceResponse, Error> {
-        match &self {
-            Nodemanger::Ldk(ldk) => ldk.pay_invoice(bolt11).await,
-            Nodemanger::Cln(cln) => cln.pay_invoice(bolt11).await,
-            Nodemanger::Greenlight(gln) => gln.pay_invoice(bolt11).await,
-        }
+        self.ln.pay_invoice(bolt11, max_fee).await
     }
 
     pub async fn pay_keysend(
@@ -224,11 +181,7 @@ impl Nodemanger {
     ) -> Result<String, Error> {
         let amount = Amount::from_sat(keysend_request.amount);
 
-        match &self {
-            Nodemanger::Ldk(ldk) => ldk.pay_keysend(keysend_request.pubkey, amount).await,
-            Nodemanger::Cln(cln) => cln.pay_keysend(keysend_request.pubkey, amount).await,
-            Nodemanger::Greenlight(gln) => gln.pay_keysend(keysend_request.pubkey, amount).await,
-        }
+        self.ln.pay_keysend(keysend_request.pubkey, amount).await
     }
 
     pub async fn create_invoice(
@@ -247,11 +200,7 @@ impl Nodemanger {
 
         let amount = Amount::from_msat(msat);
 
-        let invoice = match &self {
-            Nodemanger::Ldk(ldk) => ldk.create_invoice(amount, description).await?,
-            Nodemanger::Cln(cln) => cln.create_invoice(amount, description).await?,
-            Nodemanger::Greenlight(gln) => gln.create_invoice(amount, description).await?,
-        };
+        let invoice = self.ln.create_invoice(amount, description).await?;
 
         Ok(Bolt11 { bolt11: invoice })
     }
@@ -262,11 +211,8 @@ impl Nodemanger {
     ) -> Result<String, Error> {
         let amount = Amount::from_sat(create_invoice_request.sat);
         let address = Address::from_str(&create_invoice_request.address)?.assume_checked();
-        let txid = match &self {
-            Nodemanger::Ldk(ldk) => ldk.pay_on_chain(address, amount).await?,
-            Nodemanger::Cln(cln) => cln.pay_on_chain(address, amount).await?,
-            Nodemanger::Greenlight(gln) => gln.pay_on_chain(address, amount).await?,
-        };
+
+        let txid = self.ln.pay_on_chain(address, amount).await?;
 
         Ok(txid)
     }
@@ -280,54 +226,26 @@ impl Nodemanger {
             host,
             port,
         } = connect_request;
-        let peer_info = match &self {
-            Nodemanger::Ldk(ldk) => ldk.connect_peer(public_key, host, port).await?,
-            Nodemanger::Cln(cln) => cln.connect_peer(public_key, host, port).await?,
-            Nodemanger::Greenlight(gln) => gln.connect_peer(public_key, host, port).await?,
-        };
 
-        Ok(peer_info)
+        self.ln.connect_peer(public_key, host, port).await
     }
 
     pub async fn peers(&self) -> Result<Vec<responses::PeerInfo>, Error> {
-        let peers = match &self {
-            Nodemanger::Ldk(ldk) => ldk.list_peers().await?,
-            Nodemanger::Cln(cln) => cln.list_peers().await?,
-            Nodemanger::Greenlight(gln) => gln.list_peers().await?,
-        };
-
-        Ok(peers)
+        self.ln.list_peers().await
     }
 
     pub async fn close(&self, close_channel_request: requests::CloseChannel) -> Result<(), Error> {
-        match &self {
-            Nodemanger::Ldk(ldk) => {
-                ldk.close(
-                    close_channel_request.channel_id,
-                    close_channel_request.peer_id,
-                )
-                .await
-            }
-            Nodemanger::Cln(cln) => {
-                cln.close(
-                    close_channel_request.channel_id,
-                    close_channel_request.peer_id,
-                )
-                .await
-            }
-            Nodemanger::Greenlight(gln) => {
-                gln.close(
-                    close_channel_request.channel_id,
-                    close_channel_request.peer_id,
-                )
-                .await
-            }
-        }
+        self.ln
+            .close(
+                close_channel_request.channel_id,
+                close_channel_request.peer_id,
+            )
+            .await
     }
 }
 
 async fn post_nostr_login(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<Event>,
 ) -> Result<Response<String>, StatusCode> {
     let event = payload;
@@ -385,69 +303,78 @@ async fn post_check_auth() -> Result<StatusCode, StatusCode> {
 }
 
 async fn post_connect_peer(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<requests::ConnectPeerRequest>,
 ) -> Result<StatusCode, Error> {
-    let _res = state.ln.connect_peer(payload).await;
+    let _res = state
+        .ln
+        .connect_peer(payload.public_key, payload.host, payload.port)
+        .await;
     Ok(StatusCode::OK)
 }
 
 async fn get_peers(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
 ) -> Result<Json<Vec<responses::PeerInfo>>, Error> {
-    let peer_info = state.ln.peers().await?;
+    let peer_info = state.ln.list_peers().await?;
 
     Ok(Json(peer_info))
 }
 
 async fn post_close_channel(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<requests::CloseChannel>,
 ) -> Result<StatusCode, Error> {
-    state.ln.close(payload).await?;
+    state.ln.close(payload.channel_id, payload.peer_id).await?;
 
     Ok(StatusCode::OK)
 }
 
 async fn post_pay_keysend(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<requests::KeysendRequest>,
 ) -> Result<Json<String>, Error> {
-    let res = state.ln.pay_keysend(payload).await?;
+    let res = state
+        .ln
+        .pay_keysend(payload.pubkey, Amount::from_sat(payload.amount))
+        .await?;
 
     Ok(Json(res))
 }
 
 async fn post_pay_invoice(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<Bolt11>,
 ) -> Result<Json<responses::PayInvoiceResponse>, Error> {
-    let p = state.ln.pay_invoice(payload).await?;
-    Ok(Json(p))
+    let _p = state.ln.pay_invoice(payload.bolt11, None).await?;
+    todo!()
+    // Ok(Json(p))
 }
 
 async fn get_funding_address(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
 ) -> Result<Json<responses::FundingAddressResponse>, Error> {
-    let on_chain_balance = state.ln.new_onchain_address().await?;
+    let on_chain_address = state.ln.new_onchain_address().await?;
 
-    Ok(Json(on_chain_balance))
+    Ok(Json(FundingAddressResponse {
+        address: on_chain_address.to_string(),
+    }))
 }
 
 async fn post_new_open_channel(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<requests::OpenChannelRequest>,
 ) -> Result<StatusCode, Error> {
     // TODO: Check if node has sufficient onchain balance
 
-    if let Err(err) = state.ln.connect_open_channel(payload).await {
+    if let Err(err) = state.ln.open_channel(payload).await {
         warn!("{:?}", err);
     };
     Ok(StatusCode::OK)
 }
 
 async fn get_list_channels(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
 ) -> Result<Json<Vec<responses::ChannelInfo>>, Error> {
     let channel_info = state.ln.list_channels().await?;
 
@@ -455,7 +382,7 @@ async fn get_list_channels(
 }
 
 async fn get_balance(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
 ) -> Result<Json<responses::BalanceResponse>, Error> {
     let balance = state.ln.get_balance().await?;
 
@@ -463,18 +390,31 @@ async fn get_balance(
 }
 
 async fn get_create_invoice(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Query(params): Query<requests::CreateInvoiceParams>,
-) -> Result<Json<Bolt11>, Error> {
-    let bolt11 = state.ln.create_invoice(params).await?;
+) -> Result<Json<Bolt11Invoice>, Error> {
+    let bolt11 = state
+        .ln
+        .create_invoice(
+            Amount::from_msat(params.msat),
+            params.description.unwrap_or_default(),
+        )
+        .await?;
     Ok(Json(bolt11))
 }
 
 async fn post_pay_on_chain(
-    State(state): State<NodeMangerState>,
+    State(state): State<NodeManger>,
     Json(payload): Json<requests::PayOnChainRequest>,
 ) -> Result<Json<String>, Error> {
-    let res = state.ln.send_to_onchain_address(payload).await?;
+    // TOD0: Network should be configurable
+    let res = state
+        .ln
+        .pay_on_chain(
+            Address::from_str(&payload.address)?.require_network(Network::Bitcoin)?,
+            Amount::from_sat(payload.sat),
+        )
+        .await?;
 
     Ok(Json(res))
 }

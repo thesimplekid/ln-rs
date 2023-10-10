@@ -1,7 +1,12 @@
 use std::{path::PathBuf, time::SystemTime};
 
-use cln_rpc::model::ListinvoicesInvoicesStatus as CLNInvoiceStatus;
+#[cfg(feature = "cln")]
+use cln_rpc::model::responses::ListinvoicesInvoicesStatus as CLNInvoiceStatus;
+
+#[cfg(feature = "greenlight")]
 use gl_client::pb::cln::listinvoices_invoices::ListinvoicesInvoicesStatus as GlInvoiceStatus;
+
+#[cfg(feature = "ldk")]
 use ldk_node::PaymentStatus;
 
 use ln_rs_models::InvoiceStatus;
@@ -28,6 +33,7 @@ pub fn expand_path(path: &str) -> Option<PathBuf> {
     }
 }
 
+#[cfg(feature = "cln")]
 pub fn cln_invoice_status_to_status(status: CLNInvoiceStatus) -> InvoiceStatus {
     match status {
         CLNInvoiceStatus::UNPAID => InvoiceStatus::Unpaid,
@@ -36,6 +42,7 @@ pub fn cln_invoice_status_to_status(status: CLNInvoiceStatus) -> InvoiceStatus {
     }
 }
 
+#[cfg(feature = "greenlight")]
 pub fn gln_invoice_status_to_status(status: GlInvoiceStatus) -> InvoiceStatus {
     match status {
         GlInvoiceStatus::Unpaid => InvoiceStatus::Unpaid,
@@ -44,6 +51,7 @@ pub fn gln_invoice_status_to_status(status: GlInvoiceStatus) -> InvoiceStatus {
     }
 }
 
+#[cfg(feature = "ldk")]
 pub fn ldk_payment_status(status: PaymentStatus) -> InvoiceStatus {
     match status {
         PaymentStatus::Pending => InvoiceStatus::Unpaid,

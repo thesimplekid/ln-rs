@@ -5,21 +5,27 @@ use async_trait::async_trait;
 use bitcoin::{secp256k1::PublicKey, Address};
 // use cashu_crab::{lightning_invoice::Bolt11Invoice, Amount, Sha256};
 use futures::Stream;
-use ln_rs_models::{requests, responses, Bolt11};
+use ln_rs_models::{requests, responses};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "cln")]
 pub use cln::Cln;
 pub use error::Error;
+#[cfg(feature = "greenlight")]
 pub use greenlight::Greenlight;
+#[cfg(feature = "ldk")]
 pub use ldk::Ldk;
 pub use lightning_invoice;
 pub use lightning_invoice::Bolt11Invoice;
 pub use ln_rs_models::{Amount, InvoiceStatus, Sha256};
 
+#[cfg(feature = "cln")]
 pub mod cln;
 pub mod error;
+#[cfg(feature = "greenlight")]
 pub mod greenlight;
 pub mod jwt_auth;
+#[cfg(feature = "ldk")]
 pub mod ldk;
 pub mod lnurl;
 pub mod node_manager;
@@ -28,7 +34,6 @@ pub mod utils;
 #[derive(Clone)]
 pub struct Ln {
     pub ln_processor: Arc<dyn LnProcessor>,
-    pub node_manager: Option<node_manager::Nodemanger>,
 }
 
 /// Possible states of an invoice
@@ -95,15 +100,12 @@ pub trait LnProcessor: Send + Sync {
 
     async fn pay_invoice(
         &self,
-        invoice: Bolt11Invoice,
+        bolt11: Bolt11Invoice,
         max_fee: Option<Amount>,
-    ) -> Result<(String, Amount), Error>;
+    ) -> Result<responses::PayInvoiceResponse, Error>;
 
     async fn check_invoice_status(&self, payment_hash: &Sha256) -> Result<InvoiceStatus, Error>;
-}
 
-#[async_trait]
-pub trait LnNodeManager: Send + Sync {
     async fn new_onchain_address(&self) -> Result<Address, Error>;
 
     async fn open_channel(
@@ -114,8 +116,6 @@ pub trait LnNodeManager: Send + Sync {
     async fn list_channels(&self) -> Result<Vec<responses::ChannelInfo>, Error>;
 
     async fn get_balance(&self) -> Result<responses::BalanceResponse, Error>;
-
-    async fn pay_invoice(&self, bolt11: Bolt11) -> Result<responses::PayInvoiceResponse, Error>;
 
     async fn create_invoice(
         &self,

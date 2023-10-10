@@ -53,6 +53,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+#[cfg(feature = "cln")]
 impl From<cln_rpc::RpcError> for Error {
     fn from(err: cln_rpc::RpcError) -> Self {
         Self::Custom(err.to_string())
@@ -83,6 +84,7 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
+#[cfg(feature = "ldk")]
 impl From<ldk_node::NodeError> for Error {
     fn from(err: ldk_node::NodeError) -> Self {
         Self::Custom(err.to_string())
@@ -101,6 +103,7 @@ impl From<bitcoin::address::Error> for Error {
     }
 }
 
+#[cfg(feature = "greenlight")]
 impl From<gl_client::bitcoin::secp256k1::Error> for Error {
     fn from(err: gl_client::bitcoin::secp256k1::Error) -> Self {
         Self::Custom(err.to_string())
@@ -143,6 +146,7 @@ impl From<TryFromSliceError> for Error {
     }
 }
 
+#[cfg(feature = "greenlight")]
 impl From<gl_client::bitcoin::util::address::Error> for Error {
     fn from(err: gl_client::bitcoin::util::address::Error) -> Self {
         Self::ParseError(format!("Could not parse address {:?}", err))
