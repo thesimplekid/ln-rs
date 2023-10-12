@@ -212,6 +212,7 @@ impl LnProcessor for Cln {
                     payment_preimage: Some(hex::encode(pay_response.payment_preimage.to_vec())),
                     payment_hash: Sha256::from_str(&pay_response.payment_hash.to_string())?,
                     status,
+                    total_spent: Amount::from_msat(pay_response.amount_sent_msat.msat()),
                 }
             }
             _ => {

@@ -88,6 +88,7 @@ pub mod responses {
         pub payment_hash: Sha256,
         pub payment_preimage: Option<String>,
         pub status: InvoiceStatus,
+        pub total_spent: Amount,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
