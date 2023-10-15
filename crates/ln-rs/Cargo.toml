@@ -21,7 +21,7 @@ ldk = ["dep:ldk-node"]
 anyhow = { workspace = true } 
 async-trait = "0.1.72"
 axum = { version = "0.6.20", features = ["macros"] }
-axum-extra = { version = "0.7.7", features = ["cookie"] }
+axum-extra = { version = "0.8.0", features = ["cookie"] }
 bech32 = "0.9.1"
 bip39 = { version = "2.0.0", features = ["rand_core"] }
 bitcoin = { workspace = true }
@@ -41,7 +41,6 @@ jwt-compact = { workspace = true }
 chrono = "0.4.26"
 nostr = { workspace = true }
 tower-http = { version = "0.4.3", features = ["cors"] }
-bitcoin_hashes = "0.12.0"
 url = "2.4.0"
 uuid = { version = "1.4.1", features = ["v4"] }
 gl-client = { git = "https://github.com/Blockstream/greenlight", optional = true }

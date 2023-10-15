@@ -66,8 +66,8 @@ impl From<anyhow::Error> for Error {
     }
 }
 
-impl From<bitcoin_hashes::hex::Error> for Error {
-    fn from(err: bitcoin_hashes::hex::Error) -> Self {
+impl From<bitcoin::hashes::hex::Error> for Error {
+    fn from(err: bitcoin::hashes::hex::Error) -> Self {
         Self::Custom(err.to_string())
     }
 }
