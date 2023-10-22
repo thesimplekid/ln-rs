@@ -1,19 +1,15 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::{Request, StatusCode},
-    middleware::Next,
-    response::IntoResponse,
-    Json,
-};
+use axum::extract::State;
+use axum::http::{Request, StatusCode};
+use axum::middleware::Next;
+use axum::response::IntoResponse;
+use axum::Json;
 use axum_extra::extract::cookie::CookieJar;
-use jwt_compact::{
-    alg::{Hs256, Hs256Key},
-    prelude::*,
-    AlgorithmExt,
-};
+use jwt_compact::alg::{Hs256, Hs256Key};
+use jwt_compact::prelude::*;
+use jwt_compact::AlgorithmExt;
 use ln_rs_models::TokenClaims;
 use nostr::key::XOnlyPublicKey;
 use serde::Serialize;

@@ -128,8 +128,6 @@ mod tests {
         let lnurl = LnUrl::_new_auth_lnurl(service, Action::Login, Action::Login);
 
         println!("{}", lnurl.encode());
-
-        panic!()
     }
 }
 

@@ -1,14 +1,12 @@
-use std::{path::PathBuf, time::SystemTime};
+use std::path::PathBuf;
+use std::time::SystemTime;
 
 #[cfg(feature = "cln")]
 use cln_rpc::model::responses::ListinvoicesInvoicesStatus as CLNInvoiceStatus;
-
 #[cfg(feature = "greenlight")]
 use gl_client::pb::cln::listinvoices_invoices::ListinvoicesInvoicesStatus as GlInvoiceStatus;
-
 #[cfg(feature = "ldk")]
 use ldk_node::PaymentStatus;
-
 use ln_rs_models::InvoiceStatus;
 
 pub fn unix_time() -> u64 {

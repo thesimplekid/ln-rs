@@ -7,9 +7,10 @@ pub use amount::Amount;
 pub use bitcoin::hashes::sha256::Hash as Sha256;
 
 pub mod requests {
-    use super::Amount;
     use bitcoin::secp256k1::PublicKey;
     use serde::{Deserialize, Serialize};
+
+    use super::Amount;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CreateInvoiceParams {
@@ -75,12 +76,10 @@ impl ToString for ChannelStatus {
 }
 
 pub mod responses {
-    use super::Amount;
-    use super::InvoiceStatus;
-    use super::Sha256;
     use bitcoin::secp256k1::PublicKey;
     use serde::{Deserialize, Serialize};
 
+    use super::{Amount, InvoiceStatus, Sha256};
     use crate::ChannelStatus;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

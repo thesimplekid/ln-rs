@@ -13,28 +13,22 @@ use cln_rpc::model::requests::{
     ListfundsRequest, ListinvoicesRequest, ListpeersRequest, NewaddrRequest, PayRequest,
     WaitanyinvoiceRequest, WithdrawRequest,
 };
-use cln_rpc::model::responses::ListfundsOutputsStatus;
-use cln_rpc::model::responses::ListpeerchannelsChannels;
-use cln_rpc::model::responses::ListpeerchannelsChannelsState;
 use cln_rpc::model::responses::{
-    ListfundsChannels, ListpeersPeers, PayStatus, WaitanyinvoiceResponse,
+    ListfundsChannels, ListfundsOutputsStatus, ListpeerchannelsChannels,
+    ListpeerchannelsChannelsState, ListpeersPeers, PayStatus, WaitanyinvoiceResponse,
 };
 use cln_rpc::model::{Request, Response};
-use cln_rpc::primitives::{Amount as CLN_Amount, AmountOrAny};
-use cln_rpc::primitives::{AmountOrAll, ChannelState};
+use cln_rpc::primitives::{Amount as CLN_Amount, AmountOrAll, AmountOrAny, ChannelState};
 use futures::{Stream, StreamExt};
 use lightning_invoice::Bolt11Invoice;
 use ln_rs_models::responses::BalanceResponse;
-use ln_rs_models::Amount;
-use ln_rs_models::{requests, responses};
-use ln_rs_models::{ChannelStatus, InvoiceStatus, Sha256};
+use ln_rs_models::{requests, responses, Amount, ChannelStatus, InvoiceStatus, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::utils::cln_invoice_status_to_status;
-
 use super::{Error, InvoiceInfo, LnProcessor};
+use crate::utils::cln_invoice_status_to_status;
 
 #[derive(Clone)]
 pub struct Cln {
@@ -109,7 +103,8 @@ impl LnProcessor for Cln {
         Ok(futures::stream::unfold(
             (cln_client, last_pay_index),
             |(mut cln_client, mut last_pay_idx)| async move {
-                // We loop here since some invoices aren't zaps, in which case we wait for the next one and don't yield
+                // We loop here since some invoices aren't zaps, in which case we wait for the
+                // next one and don't yield
                 loop {
                     // info!("Waiting for index: {last_pay_idx:?}");
                     let invoice_res = cln_client

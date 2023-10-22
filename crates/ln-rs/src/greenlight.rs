@@ -15,25 +15,21 @@ use gl_client::pb::cln::listfunds_outputs::ListfundsOutputsStatus;
 use gl_client::pb::cln::pay_response::PayStatus;
 use gl_client::scheduler::Scheduler;
 use gl_client::signer::model::cln::amount_or_any::Value as SignerValue;
-use gl_client::signer::model::cln::Amount as SignerAmount;
-use gl_client::signer::model::cln::GetinfoRequest;
-use gl_client::signer::model::cln::ListpeerchannelsRequest;
+use gl_client::signer::model::cln::{
+    Amount as SignerAmount, GetinfoRequest, ListpeerchannelsRequest,
+};
 use gl_client::signer::model::greenlight::cln::InvoiceResponse;
 use gl_client::signer::Signer;
 use gl_client::tls::TlsConfig;
-use ln_rs_models::ChannelStatus;
-use ln_rs_models::{requests, responses, Bolt11};
+use ln_rs_models::{requests, responses, Amount, Bolt11, ChannelStatus, InvoiceStatus, Sha256};
 use tokio::sync::Mutex;
 use tracing::debug;
 use tracing::log::warn;
 use uuid::Uuid;
 
+use super::{Error, InvoiceInfo, LnNodeManager, LnProcessor};
 use crate::utils::gln_invoice_status_to_status;
 use crate::Bolt11Invoice;
-use ln_rs_models::{Amount, InvoiceStatus, Sha256};
-
-use super::LnNodeManager;
-use super::{Error, InvoiceInfo, LnProcessor};
 
 #[derive(Clone)]
 pub struct Greenlight {
@@ -250,7 +246,8 @@ impl LnProcessor for Greenlight {
         Ok(futures::stream::unfold(
             (cln_client, last_pay_index),
             |(mut cln_client, mut last_pay_idx)| async move {
-                // We loop here since some invoices aren't zaps, in which case we wait for the next one and don't yield
+                // We loop here since some invoices aren't zaps, in which case we wait for the
+                // next one and don't yield
                 loop {
                     let invoice_res = cln_client
                         .wait_any_invoice(cln::WaitanyinvoiceRequest {

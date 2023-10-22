@@ -1,5 +1,6 @@
 use std::array::TryFromSliceError;
-use std::{fmt, string::FromUtf8Error};
+use std::fmt;
+use std::string::FromUtf8Error;
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};

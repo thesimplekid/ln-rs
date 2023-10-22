@@ -1,33 +1,29 @@
 use std::collections::HashSet;
+use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::{Query, State};
 use axum::http::header::{ACCESS_CONTROL_ALLOW_CREDENTIALS, AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{header, HeaderValue, StatusCode};
-use axum::middleware;
 use axum::response::Response;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{middleware, Json, Router};
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use bitcoin::{Address, Network};
 use chrono::Duration;
-use jwt_compact::{
-    alg::{Hs256, Hs256Key},
-    prelude::*,
-};
+use jwt_compact::alg::{Hs256, Hs256Key};
+use jwt_compact::prelude::*;
 use lightning_invoice::Bolt11Invoice;
 use ln_rs_models::responses::FundingAddressResponse;
 use ln_rs_models::{requests, responses, Amount, Bolt11, TokenClaims};
 use nostr::event::Event;
 use nostr::key::XOnlyPublicKey;
-use std::net::Ipv4Addr;
 use tower_http::cors::CorsLayer;
 use tracing::warn;
 
 pub use super::error::Error;
 use super::jwt_auth::auth;
-
 use crate::LnProcessor;
 
 #[derive(Clone)]
