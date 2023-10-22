@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 
 members = [
     "crates/ln-rs",
@@ -13,6 +14,7 @@ readme = "README.md"
 repository = "https://github.com/thesimplekid/ln-rs"
 license-file = "LICENSE"
 keywords = ["bitcoin", "lightning"]
+
 
 [workspace.dependencies]
 anyhow = "1.0.71"
