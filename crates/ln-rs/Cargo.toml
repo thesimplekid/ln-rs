@@ -10,7 +10,7 @@ repository = "https://github.com/thesimplekid/ln-rs"
 description = "Library for integrating with lighting nodes"
 
 [features]
-default = ["cln"]
+default = ["greenlight"]
 greenlight = ["dep:gl-client"]
 cln = ["dep:cln-rpc"]
 ldk = ["dep:ldk-node"]

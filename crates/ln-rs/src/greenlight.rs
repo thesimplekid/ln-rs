@@ -9,10 +9,10 @@ use bitcoin::secp256k1::PublicKey;
 use bitcoin::Address;
 use futures::{Stream, StreamExt};
 use gl_client::bitcoin::Network;
+use gl_client::credentials::{self, Device};
 use gl_client::node::ClnClient;
 use gl_client::pb::cln;
 use gl_client::pb::cln::listfunds_outputs::ListfundsOutputsStatus;
-use gl_client::pb::cln::pay_response::PayStatus;
 use gl_client::scheduler::Scheduler;
 use gl_client::signer::model::cln::amount_or_any::Value as SignerValue;
 use gl_client::signer::model::cln::{
@@ -20,14 +20,14 @@ use gl_client::signer::model::cln::{
 };
 use gl_client::signer::model::greenlight::cln::InvoiceResponse;
 use gl_client::signer::Signer;
-use gl_client::tls::TlsConfig;
+use ln_rs_models::responses::PayInvoiceResponse;
 use ln_rs_models::{requests, responses, Amount, Bolt11, ChannelStatus, InvoiceStatus, Sha256};
 use tokio::sync::Mutex;
 use tracing::debug;
 use tracing::log::warn;
 use uuid::Uuid;
 
-use super::{Error, InvoiceInfo, LnNodeManager, LnProcessor};
+use super::{Error, InvoiceInfo, LnProcessor};
 use crate::utils::gln_invoice_status_to_status;
 use crate::Bolt11Invoice;
 
@@ -40,7 +40,7 @@ pub struct Greenlight {
 }
 
 impl Greenlight {
-    pub async fn new(invite_code: Option<String>) -> Result<Self, Error> {
+    pub async fn new() -> Result<Self, Error> {
         let network = Network::Testnet;
 
         let mut rng = rand::thread_rng();
@@ -62,13 +62,7 @@ impl Greenlight {
 
         let seed = m.to_seed("");
 
-        let tls = TlsConfig::new()?;
-
         let secret = seed[0..32].to_vec();
-
-        let signer = Signer::new(secret.clone(), network, tls)?;
-
-        let scheduler = Scheduler::new(signer.node_id(), network).await?;
 
         let (device_cert, device_key) =
             match (fs::metadata("device_cert"), fs::metadata("device_key")) {
@@ -79,30 +73,27 @@ impl Greenlight {
                 _ => {
                     // Passing in the signer is required because the client needs to prove
                     // ownership of the `node_id`
-                    let res = scheduler.register(&signer, invite_code).await?;
-                    let device_cert = res.device_cert;
-                    let device_key = res.device_key;
-
-                    fs::write("device_cert", &device_cert)?;
-                    fs::write("device_key", &device_key)?;
-
-                    (device_cert, device_key)
+                    todo!()
                 }
             };
+
+        let creds = credentials::Nobody::default();
+
+        let signer = Signer::new(secret.clone(), network, creds.clone())?;
+
+        let scheduler_unauth = Scheduler::new(signer.node_id(), network, creds.clone()).await?;
+
+        let auth_response = scheduler_unauth.register(&signer, None).await?;
+
+        let creds = Device::from_bytes(auth_response.creds);
+
+        let scheduler_auth = scheduler_unauth.authenticate(creds.clone()).await?;
 
         tracing::info!("cert {:?}", device_cert);
         tracing::info!("key {:?}", device_key);
 
-        let tls = TlsConfig::new()?.identity(
-            device_cert.as_bytes().to_vec(),
-            device_key.as_bytes().to_vec(),
-        );
+        let signer = Signer::new(secret, network, creds.clone())?;
 
-        // Use the configured `tls` instance when creating `Scheduler` and `Signer`
-        // instance going forward
-        let signer = Signer::new(secret, network, tls.clone())?;
-
-        let scheduler = Scheduler::new(signer.node_id(), network).await?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
 
         let signer_clone = signer.clone();
@@ -112,7 +103,7 @@ impl Greenlight {
             }
         });
 
-        let mut node: gl_client::node::ClnClient = scheduler.schedule(tls).await?;
+        let mut node: gl_client::node::ClnClient = scheduler_auth.node().await?;
         let info = node
             .getinfo(GetinfoRequest::default())
             .await
@@ -128,7 +119,7 @@ impl Greenlight {
             last_pay_index: None,
         })
     }
-
+    /*
     pub async fn recover(seed_phrase: &str, last_pay_index: Option<u64>) -> Result<Self, Error> {
         let network = Network::Testnet;
         let m = Mnemonic::parse(seed_phrase)?;
@@ -138,7 +129,9 @@ impl Greenlight {
         let secret = seed[0..32].to_vec();
         let signer = Signer::new(secret.clone(), network, tls)?;
 
-        let scheduler = Scheduler::new(signer.node_id(), network).await?;
+        let creds = Creds
+
+        let scheduler = Scheduler::new(signer.node_id(), network, ).await?;
 
         let recover = scheduler.recover(&signer).await?;
 
@@ -148,7 +141,7 @@ impl Greenlight {
         fs::write("device_cert", &device_cert)?;
         fs::write("device_key", &device_key)?;
 
-        let tls = TlsConfig::new()?.identity(
+        let tls = TlsConfig::new().identity(
             device_cert.as_bytes().to_vec(),
             device_key.as_bytes().to_vec(),
         );
@@ -181,6 +174,7 @@ impl Greenlight {
             last_pay_index,
         })
     }
+    */
 }
 
 #[async_trait]
@@ -296,7 +290,7 @@ impl LnProcessor for Greenlight {
         &self,
         invoice: Bolt11Invoice,
         max_fee: Option<Amount>,
-    ) -> Result<(String, Amount), Error> {
+    ) -> Result<PayInvoiceResponse, Error> {
         let mut cln_client = self.node.lock().await;
 
         let maxfee = max_fee.map(|amount| cln::Amount {
@@ -315,6 +309,7 @@ impl LnProcessor for Greenlight {
         let cln::PayResponse {
             payment_preimage,
             amount_sent_msat,
+            payment_hash,
             ..
         } = cln_response.into_inner();
         let amount_sent_msat = amount_sent_msat.map(|x| x.msat).unwrap_or_default();
@@ -323,12 +318,15 @@ impl LnProcessor for Greenlight {
             Amount::from_msat(amount_sent_msat),
         );
 
-        Ok(invoice)
-    }
-}
+        let response = PayInvoiceResponse {
+            payment_hash: Sha256::from_str(&String::from_utf8(payment_hash)?)?,
+            payment_preimage: Some(String::from_utf8(payment_preimage)?),
+            status: InvoiceStatus::Paid,
+            total_spent: Amount::from_msat(amount_sent_msat),
+        };
 
-#[async_trait]
-impl LnNodeManager for Greenlight {
+        Ok(response)
+    }
     async fn new_onchain_address(&self) -> Result<Address, Error> {
         let mut node = self.node.lock().await;
 
@@ -461,32 +459,6 @@ impl LnNodeManager for Greenlight {
             on_chain_spendable,
             on_chain_total,
             ln,
-        })
-    }
-
-    async fn pay_invoice(&self, bolt11: Bolt11) -> Result<responses::PayInvoiceResponse, Error> {
-        let mut node = self.node.lock().await;
-        let pay_request = cln::PayRequest {
-            bolt11: bolt11.bolt11.to_string(),
-            ..Default::default()
-        };
-
-        let response = node
-            .pay(pay_request)
-            .await
-            .map_err(|err| Error::TonicError(err.to_string()))?
-            .into_inner();
-
-        let status = match response.status() {
-            PayStatus::Complete => InvoiceStatus::Paid,
-            PayStatus::Pending => InvoiceStatus::InFlight,
-            PayStatus::Failed => InvoiceStatus::Expired,
-        };
-
-        Ok(responses::PayInvoiceResponse {
-            payment_preimage: Some(hex::encode(response.payment_preimage)),
-            payment_hash: Sha256::from_str(&String::from_utf8(response.payment_hash)?)?,
-            status,
         })
     }
 
