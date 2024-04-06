@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bip39::{Language, Mnemonic};
+use bip39::Mnemonic;
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::Address;
 use futures::{Stream, StreamExt};
@@ -21,7 +21,7 @@ use gl_client::signer::model::cln::{
 use gl_client::signer::model::greenlight::cln::InvoiceResponse;
 use gl_client::signer::Signer;
 use ln_rs_models::responses::PayInvoiceResponse;
-use ln_rs_models::{requests, responses, Amount, Bolt11, ChannelStatus, InvoiceStatus, Sha256};
+use ln_rs_models::{requests, responses, Amount, ChannelStatus, InvoiceStatus, Sha256};
 use tokio::sync::Mutex;
 use tracing::debug;
 use tracing::log::warn;
@@ -67,10 +67,11 @@ impl Greenlight {
             }
         };
 
-        let mut creds = credentials::Nobody::default();
-
-        creds.cert = device_cert.into_bytes();
-        creds.key = device_key.into_bytes();
+        let creds = credentials::Nobody {
+            cert: device_cert.into_bytes(),
+            key: device_key.into_bytes(),
+            ..Default::default()
+        };
 
         let signer = Signer::new(secret.clone(), network, creds.clone()).unwrap();
 
@@ -147,10 +148,11 @@ impl Greenlight {
             }
         };
 
-        let mut creds = credentials::Nobody::default();
-
-        creds.cert = device_cert.into_bytes();
-        creds.key = device_key.into_bytes();
+        let creds = credentials::Nobody {
+            cert: device_cert.into_bytes(),
+            key: device_key.into_bytes(),
+            ..Default::default()
+        };
 
         let signer = Signer::new(secret.clone(), network, creds.clone())?;
 
@@ -221,7 +223,7 @@ impl LnProcessor for Greenlight {
         let invoice = {
             let invoice = Bolt11Invoice::from_str(&bolt11)?;
             let payment_hash = Sha256::from_str(&String::from_utf8(payment_hash)?)?;
-            let invoice_info = InvoiceInfo::new(
+            InvoiceInfo::new(
                 payment_hash,
                 hash,
                 invoice,
@@ -229,9 +231,7 @@ impl LnProcessor for Greenlight {
                 super::InvoiceStatus::Unpaid,
                 "",
                 None,
-            );
-
-            invoice_info
+            )
         };
 
         Ok(invoice)
@@ -320,7 +320,7 @@ impl LnProcessor for Greenlight {
             ..
         } = cln_response.into_inner();
         let amount_sent_msat = amount_sent_msat.map(|x| x.msat).unwrap_or_default();
-        let invoice = (
+        let _invoice = (
             serde_json::to_string(&payment_preimage)?,
             Amount::from_msat(amount_sent_msat),
         );
@@ -334,6 +334,7 @@ impl LnProcessor for Greenlight {
 
         Ok(response)
     }
+
     async fn new_onchain_address(&self) -> Result<Address, Error> {
         let mut node = self.node.lock().await;
 
@@ -405,7 +406,7 @@ impl LnProcessor for Greenlight {
         let channels = channels_response
             .channels
             .into_iter()
-            .flat_map(|x| from_list_channels_to_info(x))
+            .flat_map(from_list_channels_to_info)
             .collect();
 
         Ok(channels)
@@ -595,11 +596,7 @@ impl LnProcessor for Greenlight {
             .map_err(|err| Error::TonicError(err.to_string()))?
             .into_inner();
 
-        let peers = response
-            .peers
-            .iter()
-            .flat_map(|x| from_peer_to_info(x))
-            .collect();
+        let peers = response.peers.iter().flat_map(from_peer_to_info).collect();
 
         Ok(peers)
     }
