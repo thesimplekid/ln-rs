@@ -1,8 +1,14 @@
+use std::io::Error;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::{fmt, fs};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bip39::Mnemonic;
+use bitcoin::Network;
 use clap::{Parser, Subcommand};
+use ln_rs::Ln;
+use serde::{Deserialize, Serialize};
 
 mod sub_commands;
 
@@ -15,6 +21,10 @@ mod sub_commands;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    #[arg(short, long, default_value_t = Network::Bitcoin)]
+    network: Network,
+    #[arg(short, long, default_value_t = String::from("greenlight"))]
+    ln_backend: String,
 }
 
 #[derive(Subcommand)]
@@ -33,6 +43,37 @@ enum Commands {
     ListPeers(sub_commands::list_peers::ListPeersSubcommand),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+pub enum LnBackend {
+    #[default]
+    Cln,
+    Greenlight,
+    Ldk,
+}
+
+impl FromStr for LnBackend {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cln" => Ok(Self::Cln),
+            "greenlight" => Ok(Self::Greenlight),
+            "ldk" => Ok(Self::Ldk),
+            _ => Err(Error::new(std::io::ErrorKind::Other, "")),
+        }
+    }
+}
+
+impl fmt::Display for LnBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LnBackend::Cln => write!(f, "cln"),
+            LnBackend::Greenlight => write!(f, "greenlight"),
+            LnBackend::Ldk => write!(f, "ldk"),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -42,14 +83,51 @@ async fn main() -> Result<()> {
     // Parse input
     let args: Cli = Cli::parse();
 
-    let m = Mnemonic::from_str(
-        "news image cigar behave twist truly negative globe during scissors model client",
-    )
-    .unwrap();
+    let ln_backend = LnBackend::from_str(&args.ln_backend)?;
 
-    let ln = ln_rs::Greenlight::recover(m, "./client.crt", "./client-key.pem", "testnet", None)
-        .await
-        .unwrap();
+    let ln: Ln = match ln_backend {
+        LnBackend::Greenlight => {
+            let seed_path = "./seed";
+            let cert_path = "./client.crt";
+            let key_path = "./client-key.pem";
+
+            let greenlight_mnemonic = match fs::metadata(&seed_path) {
+                Ok(_) => {
+                    let contents = fs::read_to_string(seed_path)?;
+                    Mnemonic::from_str(&contents)?
+                }
+                Err(_e) => bail!("Seed undefined"),
+            };
+
+            let greenlight = if let Ok(greenlight) = ln_rs::Greenlight::recover(
+                greenlight_mnemonic.clone(),
+                cert_path,
+                key_path,
+                &args.network,
+                None,
+            )
+            .await
+            {
+                greenlight
+            } else {
+                let greenlight =
+                    ln_rs::Greenlight::new(greenlight_mnemonic, cert_path, key_path, &args.network)
+                        .await;
+
+                greenlight?
+            };
+
+            Ln {
+                ln_processor: Arc::new(greenlight),
+            }
+        }
+        LnBackend::Cln => {
+            todo!();
+        }
+        LnBackend::Ldk => {
+            todo!();
+        }
+    };
 
     match &args.command {
         Commands::NewAddr(sub_command_args) => {

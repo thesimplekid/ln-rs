@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::Result;
 use bitcoin::Address;
 use clap::Args;
-use ln_rs::LnProcessor;
+use ln_rs::Ln;
 use ln_rs_models::Amount;
 
 #[derive(Args)]
@@ -12,11 +12,9 @@ pub struct PayOnChainSubcommand {
     amount: u64,
 }
 
-pub async fn pay_onchain<L>(sub_command_args: &PayOnChainSubcommand, ln: L) -> Result<()>
-where
-    L: LnProcessor,
-{
+pub async fn pay_onchain(sub_command_args: &PayOnChainSubcommand, ln: Ln) -> Result<()> {
     let pay_response = ln
+        .ln_processor
         .pay_on_chain(
             Address::from_str(&sub_command_args.address)
                 .unwrap()

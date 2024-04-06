@@ -56,19 +56,16 @@ impl Greenlight {
 
         let secret = seed[0..32].to_vec();
 
-        let (device_cert, device_key) = match (
+        let (device_cert, device_key) = if let (Ok(_), Ok(_)) = (
             fs::metadata(device_cert_path),
             fs::metadata(device_key_path),
         ) {
-            (Ok(_), Ok(_)) => (
+            (
                 fs::read_to_string(device_cert_path)?,
                 fs::read_to_string(device_key_path)?,
-            ),
-            _ => {
-                // Passing in the signer is required because the client needs to prove
-                // ownership of the `node_id`
-                todo!()
-            }
+            )
+        } else {
+            return Err(Error::Custom("Device cert and/or key unknown".to_string()));
         };
 
         let creds = credentials::Nobody {
@@ -142,19 +139,16 @@ impl Greenlight {
         let seed = mnemonic.to_seed("");
         let secret = seed[0..32].to_vec();
 
-        let (device_cert, device_key) = match (
+        let (device_cert, device_key) = if let (Ok(_), Ok(_)) = (
             fs::metadata(device_cert_path),
             fs::metadata(device_key_path),
         ) {
-            (Ok(_), Ok(_)) => (
+            (
                 fs::read_to_string(device_cert_path)?,
                 fs::read_to_string(device_key_path)?,
-            ),
-            _ => {
-                // Passing in the signer is required because the client needs to prove
-                // ownership of the `node_id`
-                todo!()
-            }
+            )
+        } else {
+            return Err(Error::Custom("Device cert and/or key unknown".to_string()));
         };
 
         let creds = credentials::Nobody {

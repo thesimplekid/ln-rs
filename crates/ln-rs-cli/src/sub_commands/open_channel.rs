@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::Result;
 use bitcoin::secp256k1::PublicKey;
 use clap::Args;
-use ln_rs::LnProcessor;
+use ln_rs::Ln;
 use ln_rs_models::requests::OpenChannelRequest;
 use ln_rs_models::Amount;
 
@@ -16,10 +16,7 @@ pub struct OpenChannelSubcommand {
     push_amount: Option<u64>,
 }
 
-pub async fn open_channel<L>(sub_command_args: &OpenChannelSubcommand, ln: L) -> Result<()>
-where
-    L: LnProcessor,
-{
+pub async fn open_channel(sub_command_args: &OpenChannelSubcommand, ln: Ln) -> Result<()> {
     let open_channel_request = OpenChannelRequest {
         public_key: PublicKey::from_str(&sub_command_args.public_key)?,
         host: sub_command_args.host.clone(),
@@ -28,7 +25,11 @@ where
         push_amount: sub_command_args.push_amount.map(|a| Amount::from_sat(a)),
     };
 
-    let response = ln.open_channel(open_channel_request).await.unwrap();
+    let response = ln
+        .ln_processor
+        .open_channel(open_channel_request)
+        .await
+        .unwrap();
 
     println!("Open Channel: {}", response);
 

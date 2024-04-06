@@ -1,15 +1,12 @@
 use anyhow::Result;
 use clap::Args;
-use ln_rs::LnProcessor;
+use ln_rs::Ln;
 
 #[derive(Args)]
 pub struct ListPeersSubcommand {}
 
-pub async fn list_peers<L>(_sub_command_args: &ListPeersSubcommand, ln: L) -> Result<()>
-where
-    L: LnProcessor,
-{
-    let response = ln.list_peers().await.unwrap();
+pub async fn list_peers(_sub_command_args: &ListPeersSubcommand, ln: Ln) -> Result<()> {
+    let response = ln.ln_processor.list_peers().await?;
 
     for peer in response {
         println!("{:?}", peer);
