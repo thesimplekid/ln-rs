@@ -36,7 +36,7 @@ library to integrate lighting into rust projects
  
 ## License
 
-Code is under the [BSD 3-Clause License](LICENSE-BSD-3)
+Code is under the [BSD 3-Clause License](LICENSE)
 
 ## Contribution
 

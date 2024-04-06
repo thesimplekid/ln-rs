@@ -34,129 +34,137 @@ use crate::Bolt11Invoice;
 #[derive(Clone)]
 pub struct Greenlight {
     signer: Signer,
-    signer_tx: tokio::sync::mpsc::Sender<()>,
+    signer_tx: Option<tokio::sync::mpsc::Sender<()>>,
     node: Arc<Mutex<ClnClient>>,
     last_pay_index: Option<u64>,
 }
 
 impl Greenlight {
-    pub async fn new() -> Result<Self, Error> {
-        let network = Network::Testnet;
+    pub async fn new(
+        mnemonic: Mnemonic,
+        device_cert_path: &str,
+        device_key_path: &str,
+        network: &str,
+    ) -> Result<Self, Error> {
+        let network = Network::from_str(network)?;
 
-        let mut rng = rand::thread_rng();
-
-        let m = match fs::metadata("seed") {
-            Ok(_) => {
-                // FIXME:
-                let seed = fs::read_to_string("seed")?;
-                Mnemonic::from_str(&seed)?
-            }
-            Err(_) => Mnemonic::generate_in_with(&mut rng, Language::English, 24)?,
-        };
-
-        let phrase = m.word_iter().fold("".to_string(), |c, n| c + " " + n);
-
-        // Prompt uoer to safely store the phrase
-        // FIXME: don't just log real seeds
-        tracing::info!("Seed Phrase: {:?}", phrase);
-
-        let seed = m.to_seed("");
+        let seed = mnemonic.to_seed("");
 
         let secret = seed[0..32].to_vec();
 
-        let (device_cert, device_key) =
-            match (fs::metadata("device_cert"), fs::metadata("device_key")) {
-                (Ok(_), Ok(_)) => (
-                    fs::read_to_string("device_cert")?,
-                    fs::read_to_string("device_key")?,
-                ),
-                _ => {
-                    // Passing in the signer is required because the client needs to prove
-                    // ownership of the `node_id`
-                    todo!()
-                }
-            };
+        let (device_cert, device_key) = match (
+            fs::metadata(device_cert_path),
+            fs::metadata(device_key_path),
+        ) {
+            (Ok(_), Ok(_)) => (
+                fs::read_to_string(device_cert_path)?,
+                fs::read_to_string(device_key_path)?,
+            ),
+            _ => {
+                // Passing in the signer is required because the client needs to prove
+                // ownership of the `node_id`
+                todo!()
+            }
+        };
 
-        let creds = credentials::Nobody::default();
+        let mut creds = credentials::Nobody::default();
 
-        let signer = Signer::new(secret.clone(), network, creds.clone())?;
+        creds.cert = device_cert.into_bytes();
+        creds.key = device_key.into_bytes();
 
-        let scheduler_unauth = Scheduler::new(signer.node_id(), network, creds.clone()).await?;
+        let signer = Signer::new(secret.clone(), network, creds.clone()).unwrap();
+
+        let scheduler_unauth = Scheduler::new(signer.node_id(), network, creds.clone())
+            .await
+            .unwrap();
 
         let auth_response = scheduler_unauth.register(&signer, None).await?;
 
         let creds = Device::from_bytes(auth_response.creds);
 
-        let scheduler_auth = scheduler_unauth.authenticate(creds.clone()).await?;
+        let scheduler_auth = scheduler_unauth.authenticate(creds.clone()).await.unwrap();
 
-        tracing::info!("cert {:?}", device_cert);
-        tracing::info!("key {:?}", device_key);
+        //tracing::info!("cert {:?}", device_cert);
+        //tracing::info!("key {:?}", device_key);
 
-        let signer = Signer::new(secret, network, creds.clone())?;
-
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-
-        let signer_clone = signer.clone();
-        tokio::spawn(async move {
-            if let Err(err) = signer_clone.run_forever(rx).await {
-                debug!("{:?}", err);
-            }
-        });
+        let signer = Signer::new(secret, network, creds.clone()).unwrap();
 
         let mut node: gl_client::node::ClnClient = scheduler_auth.node().await?;
         let info = node
             .getinfo(GetinfoRequest::default())
             .await
             .map_err(|x| Error::TonicError(x.to_string()))?;
-        tracing::warn!("Info {:?}", info);
+        tracing::debug!("Info {:?}", info);
 
         let node = Arc::new(Mutex::new(node));
         tracing::warn!("Node up");
         Ok(Self {
             signer,
-            signer_tx: tx,
+            signer_tx: None,
             node,
             last_pay_index: None,
         })
     }
-    /*
-    pub async fn recover(seed_phrase: &str, last_pay_index: Option<u64>) -> Result<Self, Error> {
-        let network = Network::Testnet;
-        let m = Mnemonic::parse(seed_phrase)?;
-        let tls = TlsConfig::new()?;
 
-        let seed = m.to_seed("");
-        let secret = seed[0..32].to_vec();
-        let signer = Signer::new(secret.clone(), network, tls)?;
-
-        let creds = Creds
-
-        let scheduler = Scheduler::new(signer.node_id(), network, ).await?;
-
-        let recover = scheduler.recover(&signer).await?;
-
-        let device_cert = recover.device_cert;
-        let device_key = recover.device_key;
-
-        fs::write("device_cert", &device_cert)?;
-        fs::write("device_key", &device_key)?;
-
-        let tls = TlsConfig::new().identity(
-            device_cert.as_bytes().to_vec(),
-            device_key.as_bytes().to_vec(),
-        );
-
-        let signer = Signer::new(secret, network, tls.clone())?;
+    pub fn start_signer(&mut self) -> Result<(), Error> {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let signer_clone = self.signer.clone();
 
-        let signer_clone = signer.clone();
+        self.signer_tx = Some(tx);
         tokio::spawn(async move {
             if let Err(err) = signer_clone.run_forever(rx).await {
                 debug!("{:?}", err);
             }
         });
 
-        let mut node: gl_client::node::ClnClient = scheduler.schedule(tls).await?;
+        Ok(())
+    }
+
+    pub async fn recover(
+        mnemonic: Mnemonic,
+        device_cert_path: &str,
+        device_key_path: &str,
+        network: &str,
+        last_pay_index: Option<u64>,
+    ) -> Result<Self, Error> {
+        let network = Network::from_str(network)?;
+
+        let seed = mnemonic.to_seed("");
+        let secret = seed[0..32].to_vec();
+
+        let (device_cert, device_key) = match (
+            fs::metadata(device_cert_path),
+            fs::metadata(device_key_path),
+        ) {
+            (Ok(_), Ok(_)) => (
+                fs::read_to_string(device_cert_path)?,
+                fs::read_to_string(device_key_path)?,
+            ),
+            _ => {
+                // Passing in the signer is required because the client needs to prove
+                // ownership of the `node_id`
+                todo!()
+            }
+        };
+
+        let mut creds = credentials::Nobody::default();
+
+        creds.cert = device_cert.into_bytes();
+        creds.key = device_key.into_bytes();
+
+        let signer = Signer::new(secret.clone(), network, creds.clone())?;
+
+        let scheduler_unauth = Scheduler::new(signer.node_id(), network, creds.clone())
+            .await
+            .unwrap();
+
+        let auth_response = scheduler_unauth.recover(&signer).await?;
+
+        let creds = Device::from_bytes(auth_response.creds);
+
+        let scheduler_auth = scheduler_unauth.authenticate(creds.clone()).await.unwrap();
+
+        let mut node: gl_client::node::ClnClient = scheduler_auth.node().await?;
         let info = node
             .getinfo(GetinfoRequest::default())
             .await
@@ -169,12 +177,11 @@ impl Greenlight {
 
         Ok(Self {
             signer,
-            signer_tx: tx,
+            signer_tx: None,
             node,
             last_pay_index,
         })
     }
-    */
 }
 
 #[async_trait]

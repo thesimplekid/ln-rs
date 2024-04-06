@@ -2,7 +2,7 @@
   description = "A very basic flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     flakebox = {
       url = "github:rustshop/flakebox";
@@ -19,7 +19,7 @@
       in
       {
         devShells = flakeboxLib.mkShells {
-          packages = [ ];
+          packages = [ nixpkgs.protobuf ];
         };
       });
 }
