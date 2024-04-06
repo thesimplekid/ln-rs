@@ -43,7 +43,7 @@ nostr = { workspace = true }
 tower-http = { version = "0.4.3", features = ["cors"] }
 url = "2.4.0"
 uuid = { version = "1.6.1", features = ["v4"] }
-gl-client = { git = "https://github.com/Blockstream/greenlight", optional = true }
+gl-client = { git = "https://github.com/Blockstream/greenlight", rev = "630b19f", optional = true }
 dirs = "5.0.1"
 lightning-invoice = { workspace = true }
 ln-rs-models = { path = "../ln-rs-models" }

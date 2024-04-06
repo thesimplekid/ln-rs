@@ -6,9 +6,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bip39::Mnemonic;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::Address;
+use bitcoin::{Address, Network};
 use futures::{Stream, StreamExt};
-use gl_client::bitcoin::Network;
 use gl_client::credentials::{self, Device};
 use gl_client::node::ClnClient;
 use gl_client::pb::cln;
@@ -44,9 +43,14 @@ impl Greenlight {
         mnemonic: Mnemonic,
         device_cert_path: &str,
         device_key_path: &str,
-        network: &str,
+        network: &Network,
     ) -> Result<Self, Error> {
-        let network = Network::from_str(network)?;
+        let network: gl_client::bitcoin::Network = match network {
+            Network::Bitcoin => gl_client::bitcoin::Network::Bitcoin,
+            Network::Testnet => gl_client::bitcoin::Network::Testnet,
+            Network::Regtest => gl_client::bitcoin::Network::Regtest,
+            _ => return Err(Error::Custom("Unsupported network".to_string())),
+        };
 
         let seed = mnemonic.to_seed("");
 
@@ -125,10 +129,15 @@ impl Greenlight {
         mnemonic: Mnemonic,
         device_cert_path: &str,
         device_key_path: &str,
-        network: &str,
+        network: &Network,
         last_pay_index: Option<u64>,
     ) -> Result<Self, Error> {
-        let network = Network::from_str(network)?;
+        let network: gl_client::bitcoin::Network = match network {
+            Network::Bitcoin => gl_client::bitcoin::Network::Bitcoin,
+            Network::Testnet => gl_client::bitcoin::Network::Testnet,
+            Network::Regtest => gl_client::bitcoin::Network::Regtest,
+            _ => return Err(Error::Custom("Unsupported network".to_string())),
+        };
 
         let seed = mnemonic.to_seed("");
         let secret = seed[0..32].to_vec();

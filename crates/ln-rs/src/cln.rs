@@ -532,7 +532,6 @@ fn from_open_request_to_fund_request(
 
     Ok(FundchannelRequest {
         id: public_key,
-        channel_type: None,
         amount,
         // FIXME:
         feerate: Some(cln_rpc::primitives::Feerate::PerKb(10)),
