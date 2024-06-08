@@ -168,7 +168,7 @@ impl NodeManger {
         bolt11: Bolt11Invoice,
         max_fee: Option<Amount>,
     ) -> Result<responses::PayInvoiceResponse, Error> {
-        self.ln.pay_invoice(bolt11, max_fee).await
+        self.ln.pay_invoice(bolt11, None, max_fee).await
     }
 
     pub async fn pay_keysend(
@@ -342,7 +342,7 @@ async fn post_pay_invoice(
     State(state): State<NodeManger>,
     Json(payload): Json<Bolt11>,
 ) -> Result<Json<responses::PayInvoiceResponse>, Error> {
-    let _p = state.ln.pay_invoice(payload.bolt11, None).await?;
+    let _p = state.ln.pay_invoice(payload.bolt11, None, None).await?;
     todo!()
     // Ok(Json(p))
 }

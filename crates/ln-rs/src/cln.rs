@@ -70,6 +70,7 @@ impl LnProcessor for Cln {
                 preimage: None,
                 cltv: None,
                 deschashonly: Some(true),
+                exposeprivatechannels: None,
             }))
             .await?;
 
@@ -176,6 +177,7 @@ impl LnProcessor for Cln {
     async fn pay_invoice(
         &self,
         bolt11: Bolt11Invoice,
+        partial_msat: Option<Amount>,
         max_fee: Option<Amount>,
     ) -> Result<responses::PayInvoiceResponse, Error> {
         let mut cln_client = self.cln_client.lock().await;
@@ -193,6 +195,7 @@ impl LnProcessor for Cln {
                 exclude: None,
                 maxfee: max_fee.map(|a| CLN_Amount::from_msat(a.to_msat())),
                 description: None,
+                partial_msat: partial_msat.map(|a| CLN_Amount::from_msat(a.to_msat())),
             }))
             .await?;
 
@@ -262,7 +265,7 @@ impl LnProcessor for Cln {
             }
         };
 
-        Ok(channel_id)
+        Ok(channel_id.to_string())
     }
 
     async fn list_channels(&self) -> Result<Vec<responses::ChannelInfo>, Error> {
@@ -352,6 +355,7 @@ impl LnProcessor for Cln {
                 preimage: None,
                 cltv: None,
                 deschashonly: None,
+                exposeprivatechannels: None,
             }))
             .await?;
 
@@ -370,7 +374,7 @@ impl LnProcessor for Cln {
 
     async fn pay_on_chain(&self, address: Address, amount: Amount) -> Result<String, Error> {
         let mut cln_client = self.cln_client.lock().await;
-        let satoshi = Some(AmountOrAll::Amount(CLN_Amount::from_sat(amount.to_sat())));
+        let satoshi = AmountOrAll::Amount(CLN_Amount::from_sat(amount.to_sat()));
 
         let cln_response = cln_client
             .call(cln_rpc::Request::Withdraw(WithdrawRequest {
@@ -609,38 +613,29 @@ fn _from_list_channels_to_info(
 ) -> Result<responses::ChannelInfo, Error> {
     debug!("{:?}", list_channel.funding);
     let remote_balance = list_channel.funding.as_ref().map_or(Amount::ZERO, |a| {
-        Amount::from_msat(
-            a.remote_funds_msat
-                .unwrap_or(CLN_Amount::from_msat(0))
-                .msat(),
-        )
+        Amount::from_msat(a.remote_funds_msat.msat())
     });
     let local_balance = list_channel.funding.map_or(Amount::ZERO, |a| {
-        Amount::from_msat(
-            a.local_funds_msat
-                .unwrap_or(CLN_Amount::from_msat(0))
-                .msat(),
-        )
+        Amount::from_msat(a.local_funds_msat.msat())
     });
 
-    let is_usable = list_channel
+    // FIXME:
+    let is_usable = false;
+
+    /*        list_channel
         .state
         .map(|s| matches!(s, ListpeerchannelsChannelsState::CHANNELD_NORMAL))
         .unwrap_or(false);
+    */
 
     let status = match list_channel.state {
-        Some(ListpeerchannelsChannelsState::CHANNELD_NORMAL) => ChannelStatus::Active,
-        Some(ListpeerchannelsChannelsState::OPENINGD) => ChannelStatus::PendingOpen,
+        ListpeerchannelsChannelsState::CHANNELD_NORMAL => ChannelStatus::Active,
+        ListpeerchannelsChannelsState::OPENINGD => ChannelStatus::PendingOpen,
         _ => ChannelStatus::PendingClose,
     };
 
     Ok(responses::ChannelInfo {
-        peer_pubkey: PublicKey::from_slice(
-            &list_channel
-                .peer_id
-                .ok_or(Error::Custom("No Peer Id".to_string()))?
-                .serialize(),
-        )?,
+        peer_pubkey: PublicKey::from_slice(&list_channel.peer_id.serialize())?,
         channel_id: list_channel
             .channel_id
             .ok_or(Error::Custom("No Channel Id".to_string()))?

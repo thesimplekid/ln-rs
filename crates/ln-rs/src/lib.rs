@@ -102,6 +102,7 @@ pub trait LnProcessor: Send + Sync {
     async fn pay_invoice(
         &self,
         bolt11: Bolt11Invoice,
+        partial_msat: Option<Amount>,
         max_fee: Option<Amount>,
     ) -> Result<responses::PayInvoiceResponse, Error>;
 

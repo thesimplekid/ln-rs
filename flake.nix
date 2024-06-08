@@ -19,7 +19,7 @@
       in
       {
         devShells = flakeboxLib.mkShells {
-          packages = [ nixpkgs.protobuf ];
+          packages = [ nixpkgs.protobuf3_20];
         };
       });
 }
